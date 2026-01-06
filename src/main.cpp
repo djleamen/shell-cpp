@@ -19,7 +19,7 @@ int main() {
       break;
     }
     else if (command.substr(0, 4) == "echo") {
-      cout << endl;
+      cout << command.substr(5) << endl;
       continue;
     }
     // Print: Display the output or error message
