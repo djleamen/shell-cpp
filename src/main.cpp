@@ -20,6 +20,10 @@ int main() {
     cout << command << ": command not found" << endl;
 
     // Loop: Return to step 1 and wait for the next command
+
+    if (command == "exit") {
+      break;
+    }
   }
   return 0;
 }
