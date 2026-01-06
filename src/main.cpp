@@ -3,9 +3,63 @@
 #include <sstream>
 #include <filesystem>
 #include <cstdlib>
+#include <vector>
+#include <unistd.h>
+#include <sys/wait.h>
 
 using namespace std;
 namespace fs = std::filesystem;
+
+// Parse command
+vector<string> parseCommand(const string& command) {
+  vector<string> args;
+  stringstream ss(command);
+  string arg;
+  while (ss >> arg) {
+    args.push_back(arg);
+  }
+  return args;
+}
+
+// Find executable in PATH
+string findInPath(const string& program) {
+  const char* path_env = getenv("PATH");
+  if (!path_env) return "";
+  
+  string path_str(path_env);
+  stringstream ss(path_str);
+  string dir;
+  
+  while (getline(ss, dir, ':')) {
+    fs::path full_path = fs::path(dir) / program;
+    if (fs::exists(full_path) && (fs::status(full_path).permissions() & fs::perms::owner_exec) != fs::perms::none) {
+      return full_path.string();
+    }
+  }
+  return "";
+}
+
+// Execute external program
+void executeProgram(const string& path, const vector<string>& args) {
+  pid_t pid = fork();
+  
+  if (pid == 0) {
+    vector<char*> argv;
+    for (const auto& arg : args) {
+      argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    execv(path.c_str(), argv.data());
+    cerr << "Failed to execute " << path << endl;
+    exit(1);
+  } else if (pid > 0) {
+    int status;
+    waitpid(pid, &status, 0);
+  } else {
+    cerr << "Fork failed" << endl;
+  }
+}
 
 int main() {
   // Flush after every std::cout / std:cerr
@@ -19,49 +73,46 @@ int main() {
     getline(cin, command);
 
     // Eval: Parse and execute the command
+    
+    vector<string> args = parseCommand(command);
+    if (args.empty()) continue;
+    
+    string program = args[0];
 
     // exit
-    if (command == "exit") {
+    if (program == "exit") {
       break;
     }
     // echo
-    else if (command.substr(0, 4) == "echo") {
-      cout << command.substr(5) << endl;
+    else if (program == "echo") {
+      for (size_t i = 1; i < args.size(); ++i) {
+        if (i > 1) cout << " ";
+        cout << args[i];
+      }
+      cout << endl;
     }
     // type
-    else if (command.substr(0, 5) == "type ") {
-      string arg = command.substr(5);
+    else if (program == "type" && args.size() > 1) {
+      string arg = args[1];
       if (arg == "exit" || arg == "echo" || arg == "type") {
         cout << arg << " is a shell builtin" << endl;
       } else {
-        // Search for executable in PATH
-        const char* path_env = getenv("PATH");
-        if (path_env) {
-          string path_str(path_env);
-          stringstream ss(path_str);
-          string dir;
-          bool found = false;
-          
-          while (getline(ss, dir, ':')) {
-            fs::path full_path = fs::path(dir) / arg;
-            if (fs::exists(full_path) && (fs::status(full_path).permissions() & fs::perms::owner_exec) != fs::perms::none) {
-              cout << arg << " is " << full_path.string() << endl;
-              found = true;
-              break;
-            }
-          }
-          
-          if (!found) {
-            cout << arg << ": not found" << endl;
-          }
+        string path = findInPath(arg);
+        if (!path.empty()) {
+          cout << arg << " is " << path << endl;
         } else {
           cout << arg << ": not found" << endl;
         }
       }
     }
-    // Print: Display the output or error message
+    // Try to execute as external program
     else {
-      cout << command << ": command not found" << endl;
+      string path = findInPath(program);
+      if (!path.empty()) {
+        executeProgram(path, args);
+      } else {
+        cout << program << ": command not found" << endl;
+      }
     }
 
     // Loop: Return to step 1 and wait for the next command
