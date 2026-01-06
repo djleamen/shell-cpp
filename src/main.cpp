@@ -15,15 +15,15 @@ int main() {
     getline(cin, command);
 
     // Eval: Parse and execute the command
-  
-    // Print: Display the output or error message
-    cout << command << ": command not found" << endl;
-
-    // Loop: Return to step 1 and wait for the next command
 
     if (command == "exit") {
       break;
     }
+
+    // Print: Display the output or error message
+    cout << command << ": command not found" << endl;
+
+    // Loop: Return to step 1 and wait for the next command
   }
   return 0;
 }
