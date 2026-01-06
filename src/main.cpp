@@ -26,7 +26,7 @@ int main() {
       if (arg == "exit" || arg == "echo" || arg == "type") {
         cout << arg << " is a shell builtin" << endl;
       } else {
-        cout << "type: " << arg << ": not found" << endl;
+        cout << arg << ": not found" << endl;
       }
     }
     // Print: Display the output or error message
