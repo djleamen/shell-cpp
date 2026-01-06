@@ -18,7 +18,7 @@ int main() {
     if (command == "exit") {
       break;
     }
-    else if (command == "echo") {
+    else if (command.substr(0, 4) == "echo") {
       cout << endl;
       continue;
     }
