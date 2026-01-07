@@ -117,6 +117,19 @@ int main() {
     // cd
     else if (program == "cd" && args.size() > 1) {
       string path = args[1];
+      
+      // Expand ~ to home directory
+      if (path == "~" || path.substr(0, 2) == "~/") {
+        const char* home = getenv("HOME");
+        if (home) {
+          if (path == "~") {
+            path = home;
+          } else {
+            path = string(home) + path.substr(1);
+          }
+        }
+      }
+      
       if (chdir(path.c_str()) != 0) {
         cout << "cd: " << path << ": No such file or directory" << endl;
       }
