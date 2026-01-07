@@ -1,3 +1,8 @@
+/*
+Shell - A simple command-line shell implementation in C++
+From CodeCrafters.io build-your-own-shell (C++23)
+*/
+
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -13,10 +18,23 @@ namespace fs = std::filesystem;
 // Parse command
 vector<string> parseCommand(const string& command) {
   vector<string> args;
-  stringstream ss(command);
-  string arg;
-  while (ss >> arg) {
-    args.push_back(arg);
+  string current_arg;
+  bool in_quotes = false;
+  for (size_t i = 0; i < command.length(); ++i) {
+    char c = command[i];
+    if (c == '\'') {
+      in_quotes = !in_quotes;
+    } else if (isspace(c) && !in_quotes) {
+      if (!current_arg.empty()) {
+        args.push_back(current_arg);
+        current_arg.clear();
+      }
+    } else {
+      current_arg += c;
+    }
+  }
+    if (!current_arg.empty()) {
+    args.push_back(current_arg);
   }
   return args;
 }
@@ -73,7 +91,6 @@ int main() {
     getline(cin, command);
 
     // Eval: Parse and execute the command
-    
     vector<string> args = parseCommand(command);
     if (args.empty()) continue;
     
