@@ -19,12 +19,19 @@ namespace fs = std::filesystem;
 vector<string> parseCommand(const string& command) {
   vector<string> args;
   string current_arg;
-  bool in_quotes = false;
+  bool in_single_quotes = false;
+  bool in_double_quotes = false;
+  
   for (size_t i = 0; i < command.length(); ++i) {
     char c = command[i];
-    if (c == '\'') {
-      in_quotes = !in_quotes;
-    } else if (isspace(c) && !in_quotes) {
+    
+    if (c == '\'' && !in_double_quotes) {
+      // Single quote toggles (only if not in double quotes)
+      in_single_quotes = !in_single_quotes;
+    } else if (c == '"' && !in_single_quotes) {
+      // Double quote toggles (only if not in single quotes)
+      in_double_quotes = !in_double_quotes;
+    } else if (isspace(c) && !in_single_quotes && !in_double_quotes) {
       if (!current_arg.empty()) {
         args.push_back(current_arg);
         current_arg.clear();
