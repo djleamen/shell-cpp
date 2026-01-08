@@ -34,7 +34,22 @@ vector<string> parseCommand(const string& command) {
       else {
         current_arg += c;
       }
-    } else if (c == '\'' && !in_double_quotes) {
+    }
+    // Handle backslash escaping inside double quotes
+    else if (c == '\\' && in_double_quotes && !in_single_quotes) {
+      if (i + 1 < command.length()) {
+        char next = command[i + 1];
+        if (next == '"' || next == '\\') {
+          ++i;
+          current_arg += next;
+        } else {
+          current_arg += c;
+        }
+      } else {
+        current_arg += c;
+      }
+    }
+    else if (c == '\'' && !in_double_quotes) {
       // Single quote toggles (only if not in double quotes)
       in_single_quotes = !in_single_quotes;
     } else if (c == '"' && !in_single_quotes) {
