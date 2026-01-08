@@ -26,17 +26,60 @@ const char* builtin_commands[] = {
 
 char* command_generator(const char* text, int state) {
   static int list_index, len;
+  static vector<string> path_executables;
+  static size_t path_exec_index;
   const char* name;
   
   if (!state) {
     list_index = 0;
     len = strlen(text);
+    path_executables.clear();
+    path_exec_index = 0;
+    
+    const char* path_env = getenv("PATH");
+    if (path_env) {
+      string path_str(path_env);
+      stringstream ss(path_str);
+      string dir;
+      
+      while (getline(ss, dir, ':')) {
+        if (!fs::exists(dir)) continue;
+        
+        try {
+          for (const auto& entry : fs::directory_iterator(dir)) {
+            if (entry.is_regular_file()) {
+              string filename = entry.path().filename().string();
+              if (filename.length() >= len && filename.substr(0, len) == text) {
+                // Check if executable
+                auto perms = entry.status().permissions();
+                if ((perms & fs::perms::owner_exec) != fs::perms::none ||
+                    (perms & fs::perms::group_exec) != fs::perms::none ||
+                    (perms & fs::perms::others_exec) != fs::perms::none) {
+                  // Avoid duplicates
+                  if (find(path_executables.begin(), path_executables.end(), filename) == path_executables.end()) {
+                    path_executables.push_back(filename);
+                  }
+                }
+              }
+            }
+          }
+        } catch (...) {
+          // Skip directories that cause errors...
+        }
+      }
+    }
   }
   
+  // Return builtin commands
   while ((name = builtin_commands[list_index++])) {
     if (strncmp(name, text, len) == 0) {
       return strdup(name);
     }
+  }
+  
+  // Return PATH executables
+  if (path_exec_index < path_executables.size()) {
+    return strdup(path_executables[path_exec_index++].c_str());
   }
   
   return nullptr;
