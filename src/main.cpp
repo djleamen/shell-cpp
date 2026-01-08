@@ -12,9 +12,46 @@ From CodeCrafters.io build-your-own-shell (C++23)
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 using namespace std;
 namespace fs = std::filesystem;
+
+const char* builtin_commands[] = {
+  "echo",
+  "exit",
+  nullptr
+};
+
+char* command_generator(const char* text, int state) {
+  static int list_index, len;
+  const char* name;
+  
+  if (!state) {
+    list_index = 0;
+    len = strlen(text);
+  }
+  
+  while ((name = builtin_commands[list_index++])) {
+    if (strncmp(name, text, len) == 0) {
+      return strdup(name);
+    }
+  }
+  
+  return nullptr;
+}
+
+char** command_completion(const char* text, int start, int end) {
+  // Only complete if we're at the beginning of the line
+  if (start == 0) {
+    return rl_completion_matches(text, command_generator);
+  }
+  
+  // Don't attempt filename completion for arguments
+  rl_attempted_completion_over = 1;
+  return nullptr;
+}
 
 struct CommandInfo {
   vector<string> args;
@@ -193,11 +230,19 @@ int main() {
   cout << unitbuf;
   cerr << unitbuf;
 
+  rl_attempted_completion_function = command_completion;
+
   // Read: Display a prompt and wait for user input
   while (true) {
-    cout << "$ ";
-    string command;
-    getline(cin, command);
+    char* input = readline("$ ");
+    
+    // Check for EOF (Ctrl+D)
+    if (!input) {
+      break;
+    }
+    
+    string command(input);
+    free(input);
 
     // Eval: Parse and execute the command
     CommandInfo cmd_info = parseCommand(command);
