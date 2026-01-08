@@ -20,12 +20,15 @@ struct CommandInfo {
   vector<string> args;
   string output_file;
   bool has_redirect;
+  string error_file;
+  bool has_error_redirect;
 };
 
 // Parse command
 CommandInfo parseCommand(const string& command) {
   CommandInfo info;
   info.has_redirect = false;
+  info.has_error_redirect = false;
   
   vector<string> args;
   string current_arg;
@@ -78,15 +81,22 @@ CommandInfo parseCommand(const string& command) {
     args.push_back(current_arg);
   }
   
-  // Check for output redirection (> or 1>)
+  // Check for output redirection (> or 1>) and error redirection (2>)
   for (size_t i = 0; i < args.size(); ++i) {
     if (args[i] == ">" || args[i] == "1>") {
       info.has_redirect = true;
       if (i + 1 < args.size()) {
         info.output_file = args[i + 1];
         args.erase(args.begin() + i, args.begin() + i + 2);
+        --i;
       }
-      break;
+    } else if (args[i] == "2>") {
+      info.has_error_redirect = true;
+      if (i + 1 < args.size()) {
+        info.error_file = args[i + 1];
+        args.erase(args.begin() + i, args.begin() + i + 2);
+        --i;
+      }
     }
   }
   
@@ -113,7 +123,7 @@ string findInPath(const string& program) {
 }
 
 // Execute external program
-void executeProgram(const string& path, const vector<string>& args, const string& output_file = "") {
+void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", const string& error_file = "") {
   pid_t pid = fork();
   
   if (pid == 0) {
@@ -124,6 +134,16 @@ void executeProgram(const string& path, const vector<string>& args, const string
         exit(1);
       }
       dup2(fd, STDOUT_FILENO);
+      close(fd);
+    }
+    
+    if (!error_file.empty()) {
+      int fd = open(error_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (fd == -1) {
+        cerr << "Failed to open " << error_file << " for writing" << endl;
+        exit(1);
+      }
+      dup2(fd, STDERR_FILENO);
       close(fd);
     }
     
@@ -164,11 +184,22 @@ int main() {
     
     int saved_stdout = -1;
     int redirect_fd = -1;
+    int saved_stderr = -1;
+    int error_redirect_fd = -1;
+    
     if (cmd_info.has_redirect && !cmd_info.output_file.empty()) {
       saved_stdout = dup(STDOUT_FILENO);
       redirect_fd = open(cmd_info.output_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
       if (redirect_fd != -1) {
         dup2(redirect_fd, STDOUT_FILENO);
+      }
+    }
+    
+    if (cmd_info.has_error_redirect && !cmd_info.error_file.empty()) {
+      saved_stderr = dup(STDERR_FILENO);
+      error_redirect_fd = open(cmd_info.error_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (error_redirect_fd != -1) {
+        dup2(error_redirect_fd, STDERR_FILENO);
       }
     }
 
@@ -229,7 +260,7 @@ int main() {
     }
     // Try to execute as external program
     else {
-      // Restore stdout before forking for external programs
+      // Restore stdout and stderr before forking for external programs
       if (saved_stdout != -1) {
         dup2(saved_stdout, STDOUT_FILENO);
         close(saved_stdout);
@@ -237,19 +268,34 @@ int main() {
         saved_stdout = -1;
       }
       
+      if (saved_stderr != -1) {
+        dup2(saved_stderr, STDERR_FILENO);
+        close(saved_stderr);
+        if (error_redirect_fd != -1) close(error_redirect_fd);
+        saved_stderr = -1;
+      }
+      
       string path = findInPath(program);
       if (!path.empty()) {
-        executeProgram(path, args, cmd_info.has_redirect ? cmd_info.output_file : "");
+        executeProgram(path, args, 
+                      cmd_info.has_redirect ? cmd_info.output_file : "",
+                      cmd_info.has_error_redirect ? cmd_info.error_file : "");
       } else {
         cout << program << ": command not found" << endl;
       }
     }
     
-    // Restore stdout for built-in commands if redirected
+    // Restore stdout and stderr for built-in commands if redirected
     if (saved_stdout != -1) {
       dup2(saved_stdout, STDOUT_FILENO);
       close(saved_stdout);
       if (redirect_fd != -1) close(redirect_fd);
+    }
+    
+    if (saved_stderr != -1) {
+      dup2(saved_stderr, STDERR_FILENO);
+      close(saved_stderr);
+      if (error_redirect_fd != -1) close(error_redirect_fd);
     }
 
     // Loop: Return to step 1 and wait for the next command
