@@ -20,6 +20,7 @@ struct CommandInfo {
   vector<string> args;
   string output_file;
   bool has_redirect;
+  bool is_append;
   string error_file;
   bool has_error_redirect;
 };
@@ -28,6 +29,7 @@ struct CommandInfo {
 CommandInfo parseCommand(const string& command) {
   CommandInfo info;
   info.has_redirect = false;
+  info.is_append = false;
   info.has_error_redirect = false;
   
   vector<string> args;
@@ -81,10 +83,19 @@ CommandInfo parseCommand(const string& command) {
     args.push_back(current_arg);
   }
   
-  // Check for output redirection (> or 1>) and error redirection (2>)
+  // Check for output redirection (>>, 1>>, >, or 1>) and error redirection (2>)
   for (size_t i = 0; i < args.size(); ++i) {
-    if (args[i] == ">" || args[i] == "1>") {
+    if (args[i] == ">>" || args[i] == "1>>") {
       info.has_redirect = true;
+      info.is_append = true;
+      if (i + 1 < args.size()) {
+        info.output_file = args[i + 1];
+        args.erase(args.begin() + i, args.begin() + i + 2);
+        --i;
+      }
+    } else if (args[i] == ">" || args[i] == "1>") {
+      info.has_redirect = true;
+      info.is_append = false;
       if (i + 1 < args.size()) {
         info.output_file = args[i + 1];
         args.erase(args.begin() + i, args.begin() + i + 2);
@@ -123,12 +134,13 @@ string findInPath(const string& program) {
 }
 
 // Execute external program
-void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", const string& error_file = "") {
+void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", bool is_append = false, const string& error_file = "") {
   pid_t pid = fork();
   
   if (pid == 0) {
     if (!output_file.empty()) {
-      int fd = open(output_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int flags = O_WRONLY | O_CREAT | (is_append ? O_APPEND : O_TRUNC);
+      int fd = open(output_file.c_str(), flags, 0644);
       if (fd == -1) {
         cerr << "Failed to open " << output_file << " for writing" << endl;
         exit(1);
@@ -189,7 +201,8 @@ int main() {
     
     if (cmd_info.has_redirect && !cmd_info.output_file.empty()) {
       saved_stdout = dup(STDOUT_FILENO);
-      redirect_fd = open(cmd_info.output_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int flags = O_WRONLY | O_CREAT | (cmd_info.is_append ? O_APPEND : O_TRUNC);
+      redirect_fd = open(cmd_info.output_file.c_str(), flags, 0644);
       if (redirect_fd != -1) {
         dup2(redirect_fd, STDOUT_FILENO);
       }
@@ -279,6 +292,7 @@ int main() {
       if (!path.empty()) {
         executeProgram(path, args, 
                       cmd_info.has_redirect ? cmd_info.output_file : "",
+                      cmd_info.is_append,
                       cmd_info.has_error_redirect ? cmd_info.error_file : "");
       } else {
         cout << program << ": command not found" << endl;
