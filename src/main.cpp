@@ -23,6 +23,7 @@ struct CommandInfo {
   bool is_append;
   string error_file;
   bool has_error_redirect;
+  bool is_error_append;
 };
 
 // Parse command
@@ -31,6 +32,7 @@ CommandInfo parseCommand(const string& command) {
   info.has_redirect = false;
   info.is_append = false;
   info.has_error_redirect = false;
+  info.is_error_append = false;
   
   vector<string> args;
   string current_arg;
@@ -101,8 +103,17 @@ CommandInfo parseCommand(const string& command) {
         args.erase(args.begin() + i, args.begin() + i + 2);
         --i;
       }
+    } else if (args[i] == "2>>") {
+      info.has_error_redirect = true;
+      info.is_error_append = true;
+      if (i + 1 < args.size()) {
+        info.error_file = args[i + 1];
+        args.erase(args.begin() + i, args.begin() + i + 2);
+        --i;
+      }
     } else if (args[i] == "2>") {
       info.has_error_redirect = true;
+      info.is_error_append = false;
       if (i + 1 < args.size()) {
         info.error_file = args[i + 1];
         args.erase(args.begin() + i, args.begin() + i + 2);
@@ -134,7 +145,7 @@ string findInPath(const string& program) {
 }
 
 // Execute external program
-void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", bool is_append = false, const string& error_file = "") {
+void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", bool is_append = false, const string& error_file = "", bool is_error_append = false) {
   pid_t pid = fork();
   
   if (pid == 0) {
@@ -150,7 +161,8 @@ void executeProgram(const string& path, const vector<string>& args, const string
     }
     
     if (!error_file.empty()) {
-      int fd = open(error_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int flags = O_WRONLY | O_CREAT | (is_error_append ? O_APPEND : O_TRUNC);
+      int fd = open(error_file.c_str(), flags, 0644);
       if (fd == -1) {
         cerr << "Failed to open " << error_file << " for writing" << endl;
         exit(1);
@@ -210,7 +222,8 @@ int main() {
     
     if (cmd_info.has_error_redirect && !cmd_info.error_file.empty()) {
       saved_stderr = dup(STDERR_FILENO);
-      error_redirect_fd = open(cmd_info.error_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      int flags = O_WRONLY | O_CREAT | (cmd_info.is_error_append ? O_APPEND : O_TRUNC);
+      error_redirect_fd = open(cmd_info.error_file.c_str(), flags, 0644);
       if (error_redirect_fd != -1) {
         dup2(error_redirect_fd, STDERR_FILENO);
       }
@@ -293,7 +306,8 @@ int main() {
         executeProgram(path, args, 
                       cmd_info.has_redirect ? cmd_info.output_file : "",
                       cmd_info.is_append,
-                      cmd_info.has_error_redirect ? cmd_info.error_file : "");
+                      cmd_info.has_error_redirect ? cmd_info.error_file : "",
+                      cmd_info.is_error_append);
       } else {
         cout << program << ": command not found" << endl;
       }
