@@ -256,6 +256,8 @@ PipelineInfo parsePipeline(const string& command) {
   return pipeline;
 }
 
+string findInPath(const string& program);
+
 bool isBuiltin(const string& cmd) {
   return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd";
 }
