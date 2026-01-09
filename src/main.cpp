@@ -12,6 +12,7 @@ From CodeCrafters.io build-your-own-shell (C++23)
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <fstream>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -317,18 +318,35 @@ void executeBuiltinInChild(const vector<string>& args) {
     }
   }
   else if (program == "history") {
-    int start = history_base;
-    int end = history_base + history_length;
-    
-    if (args.size() > 1) {
-      int n = stoi(args[1]);
-      start = max(history_base, end - n);
-    }
-    
-    for (int i = start; i < end; ++i) {
-      HIST_ENTRY* entry = history_get(i);
-      if (entry) {
-        cout << "    " << i << "  " << entry->line << endl;
+    if (args.size() > 2 && args[1] == "-r") {
+      // history -r <file> - read history from file
+      string filename = args[2];
+      ifstream file(filename);
+      if (file.is_open()) {
+        string line;
+        while (getline(file, line)) {
+          if (!line.empty()) {
+            add_history(line.c_str());
+          }
+        }
+        file.close();
+      } else {
+        cerr << "history: " << filename << ": No such file or directory" << endl;
+      }
+    } else {
+      int start = history_base;
+      int end = history_base + history_length;
+      
+      if (args.size() > 1 && args[1] != "-r") {
+        int n = stoi(args[1]);
+        start = max(history_base, end - n);
+      }
+      
+      for (int i = start; i < end; ++i) {
+        HIST_ENTRY* entry = history_get(i);
+        if (entry) {
+          cout << "    " << i << "  " << entry->line << endl;
+        }
       }
     }
   }
@@ -615,18 +633,35 @@ int main() {
     }
     // history
     else if (program == "history") {
-      int start = history_base;
-      int end = history_base + history_length;
-      
-      if (args.size() > 1) {
-        int n = stoi(args[1]);
-        start = max(history_base, end - n);
-      }
-      
-      for (int i = start; i < end; ++i) {
-        HIST_ENTRY* entry = history_get(i);
-        if (entry) {
-          cout << "    " << i << "  " << entry->line << endl;
+      if (args.size() > 2 && args[1] == "-r") {
+        // history -r <file>
+        string filename = args[2];
+        ifstream file(filename);
+        if (file.is_open()) {
+          string line;
+          while (getline(file, line)) {
+            if (!line.empty()) {
+              add_history(line.c_str());
+            }
+          }
+          file.close();
+        } else {
+          cerr << "history: " << filename << ": No such file or directory" << endl;
+        }
+      } else {
+        int start = history_base;
+        int end = history_base + history_length;
+        
+        if (args.size() > 1 && args[1] != "-r") {
+          int n = stoi(args[1]);
+          start = max(history_base, end - n);
+        }
+        
+        for (int i = start; i < end; ++i) {
+          HIST_ENTRY* entry = history_get(i);
+          if (entry) {
+            cout << "    " << i << "  " << entry->line << endl;
+          }
         }
       }
     }
