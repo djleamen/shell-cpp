@@ -21,6 +21,9 @@ namespace fs = std::filesystem;
 const char* builtin_commands[] = {
   "echo",
   "exit",
+  "type",
+  "pwd",
+  "cd",
   nullptr
 };
 
@@ -253,6 +256,67 @@ PipelineInfo parsePipeline(const string& command) {
   return pipeline;
 }
 
+bool isBuiltin(const string& cmd) {
+  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd";
+}
+
+// Execute built-in command (for use in child process during pipeline)
+void executeBuiltinInChild(const vector<string>& args) {
+  string program = args[0];
+  
+  if (program == "exit") {
+    exit(0);
+  }
+  else if (program == "echo") {
+    for (size_t i = 1; i < args.size(); ++i) {
+      if (i > 1) cout << " ";
+      cout << args[i];
+    }
+    cout << endl;
+  }
+  else if (program == "type" && args.size() > 1) {
+    string arg = args[1];
+    if (isBuiltin(arg)) {
+      cout << arg << " is a shell builtin" << endl;
+    } else {
+      string path = findInPath(arg);
+      if (!path.empty()) {
+        cout << arg << " is " << path << endl;
+      } else {
+        cout << arg << ": not found" << endl;
+      }
+    }
+  }
+  else if (program == "pwd") {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+      cout << cwd << endl;
+    } else {
+      cerr << "pwd: error getting current directory" << endl;
+    }
+  }
+  else if (program == "cd" && args.size() > 1) {
+    string path = args[1];
+    
+    if (path == "~" || path.substr(0, 2) == "~/") {
+      const char* home = getenv("HOME");
+      if (home) {
+        if (path == "~") {
+          path = home;
+        } else {
+          path = string(home) + path.substr(1);
+        }
+      }
+    }
+    
+    if (chdir(path.c_str()) != 0) {
+      cout << "cd: " << path << ": No such file or directory" << endl;
+    }
+  }
+  
+  exit(0);
+}
+
 // Find executable in PATH
 string findInPath(const string& program) {
   const char* path_env = getenv("PATH");
@@ -337,15 +401,21 @@ void executePipeline(const vector<CommandInfo>& commands) {
   for (int i = 0; i < num_commands; ++i) {
     const CommandInfo& cmd = commands[i];
     
-    // Find executable path
-    string path = findInPath(cmd.args[0]);
-    if (path.empty()) {
-      cerr << cmd.args[0] << ": command not found" << endl;
-      for (int j = 0; j < num_commands - 1; ++j) {
-        close(pipes[j][0]);
-        close(pipes[j][1]);
+    // Check if command is a built-in
+    bool is_builtin = isBuiltin(cmd.args[0]);
+    string path;
+    
+    // Find executable path for external commands
+    if (!is_builtin) {
+      path = findInPath(cmd.args[0]);
+      if (path.empty()) {
+        cerr << cmd.args[0] << ": command not found" << endl;
+        for (int j = 0; j < num_commands - 1; ++j) {
+          close(pipes[j][0]);
+          close(pipes[j][1]);
+        }
+        return;
       }
-      return;
     }
     
     pid_t pid = fork();
@@ -391,16 +461,20 @@ void executePipeline(const vector<CommandInfo>& commands) {
         close(fd);
       }
       
-      // Execute command
-      vector<char*> argv;
-      for (const auto& arg : cmd.args) {
-        argv.push_back(const_cast<char*>(arg.c_str()));
+      // Execute command (built-in or external)
+      if (is_builtin) {
+        executeBuiltinInChild(cmd.args);
+      } else {
+        vector<char*> argv;
+        for (const auto& arg : cmd.args) {
+          argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        
+        execv(path.c_str(), argv.data());
+        cerr << "Failed to execute " << path << endl;
+        exit(1);
       }
-      argv.push_back(nullptr);
-      
-      execv(path.c_str(), argv.data());
-      cerr << "Failed to execute " << path << endl;
-      exit(1);
     } else if (pid > 0) {
       pids.push_back(pid);
     } else {
@@ -496,7 +570,7 @@ int main() {
     // type
     else if (program == "type" && args.size() > 1) {
       string arg = args[1];
-      if (arg == "exit" || arg == "echo" || arg == "type" || arg == "pwd" || arg == "cd") {
+      if (isBuiltin(arg)) {
         cout << arg << " is a shell builtin" << endl;
       } else {
         string path = findInPath(arg);
