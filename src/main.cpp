@@ -684,7 +684,8 @@ int main() {
           file.close();
         } else {
           cerr << "history: " << filename << ": No such file or directory" << endl;
-        }if (args.size() > 2 && args[1] == "-a") {
+        }
+      } else if (args.size() > 2 && args[1] == "-a") {
         // history -a <file>
         string filename = args[2];
         ofstream file(filename, ios::app);
@@ -723,7 +724,7 @@ int main() {
         int start = history_base;
         int end = history_base + history_length;
         
-        if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
+        if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
           int n = stoi(args[1]);
           start = max(history_base, end - n);
         }
