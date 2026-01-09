@@ -32,20 +32,25 @@ const char* builtin_commands[] = {
 };
 
 char* command_generator(const char* text, int state) {
-  static int list_index, len;
+  static int list_index;
+  static size_t len;
+  static string search_text;  // Store as string for safety
   static vector<string> path_executables;
   static size_t path_exec_index;
-  const char* name;
+  static bool builtins_done;  // Track when we've finished checking builtins
   
   if (!state) {
     list_index = 0;
-    len = strlen(text);
+    search_text = text ? text : "";  // Safely handle null and convert to string
+    len = search_text.length();
     path_executables.clear();
     path_exec_index = 0;
+    builtins_done = false;
     
+    string path_str;
     const char* path_env = getenv("PATH");
     if (path_env) {
-      string path_str(path_env);
+      path_str = path_env;
       stringstream ss(path_str);
       string dir;
       
@@ -56,7 +61,7 @@ char* command_generator(const char* text, int state) {
           for (const auto& entry : fs::directory_iterator(dir)) {
             if (entry.is_regular_file()) {
               string filename = entry.path().filename().string();
-              if (filename.length() >= len && filename.substr(0, len) == text) {
+              if (filename.length() >= len && filename.substr(0, len) == search_text) {
                 // Check if executable
                 auto perms = entry.status().permissions();
                 if ((perms & fs::perms::owner_exec) != fs::perms::none ||
@@ -78,10 +83,15 @@ char* command_generator(const char* text, int state) {
   }
   
   // Return builtin commands
-  while ((name = builtin_commands[list_index++])) {
-    if (strncmp(name, text, len) == 0) {
-      return strdup(name);
+  if (!builtins_done) {
+    while (builtin_commands[list_index]) {
+      const char* name = builtin_commands[list_index++];
+      string cmd_name(name);
+      if (cmd_name.length() >= len && cmd_name.substr(0, len) == search_text) {
+        return strdup(name);
+      }
     }
+    builtins_done = true;
   }
   
   // Return PATH executables
@@ -305,12 +315,14 @@ void executeBuiltinInChild(const vector<string>& args) {
     string path = args[1];
     
     if (path == "~" || path.substr(0, 2) == "~/") {
-      const char* home = getenv("HOME");
-      if (home) {
+      string home;
+      const char* home_env = getenv("HOME");
+      if (home_env) {
+        home = home_env;
         if (path == "~") {
           path = home;
         } else {
-          path = string(home) + path.substr(1);
+          path = home + path.substr(1);
         }
       }
     }
@@ -392,10 +404,13 @@ void executeBuiltinInChild(const vector<string>& args) {
 
 // Find executable in PATH
 string findInPath(const string& program) {
+  string path_str;
   const char* path_env = getenv("PATH");
-  if (!path_env) return "";
-  
-  string path_str(path_env);
+  if (path_env) {
+    path_str = path_env;
+  } else {
+    return "";
+  }
   stringstream ss(path_str);
   string dir;
   
@@ -435,9 +450,16 @@ void executeProgram(const string& path, const vector<string>& args, const string
       close(fd);
     }
     
+    // Properly allocate mutable strings for execv (required by POSIX)
+    vector<vector<char>> argv_storage;
     vector<char*> argv;
+    argv_storage.reserve(args.size());
+    argv.reserve(args.size() + 1);
+    
     for (const auto& arg : args) {
-      argv.push_back(const_cast<char*>(arg.c_str()));
+      argv_storage.emplace_back(arg.begin(), arg.end());
+      argv_storage.back().push_back('\0');
+      argv.push_back(argv_storage.back().data());
     }
     argv.push_back(nullptr);
 
@@ -538,9 +560,16 @@ void executePipeline(const vector<CommandInfo>& commands) {
       if (is_builtin) {
         executeBuiltinInChild(cmd.args);
       } else {
+        // Properly allocate mutable strings for execv (required by POSIX)
+        vector<vector<char>> argv_storage;
         vector<char*> argv;
+        argv_storage.reserve(cmd.args.size());
+        argv.reserve(cmd.args.size() + 1);
+        
         for (const auto& arg : cmd.args) {
-          argv.push_back(const_cast<char*>(arg.c_str()));
+          argv_storage.emplace_back(arg.begin(), arg.end());
+          argv_storage.back().push_back('\0');
+          argv.push_back(argv_storage.back().data());
         }
         argv.push_back(nullptr);
         
@@ -575,9 +604,14 @@ int main() {
 
   rl_attempted_completion_function = command_completion;
 
-  // HISTFILE
-  const char* histfile = getenv("HISTFILE");
-  if (histfile) {
+  // HISTFILE - safely get and store environment variable
+  string histfile;
+  const char* histfile_env = getenv("HISTFILE");
+  if (histfile_env) {
+    histfile = histfile_env;
+  }
+  
+  if (!histfile.empty()) {
     ifstream file(histfile);
     if (file.is_open()) {
       string line;
@@ -758,12 +792,14 @@ int main() {
       
       // Expand ~ to home directory
       if (path == "~" || path.substr(0, 2) == "~/") {
-        const char* home = getenv("HOME");
-        if (home) {
+        string home;
+        const char* home_env = getenv("HOME");
+        if (home_env) {
+          home = home_env;
           if (path == "~") {
             path = home;
           } else {
-            path = string(home) + path.substr(1);
+            path = home + path.substr(1);
           }
         }
       }
@@ -818,7 +854,7 @@ int main() {
   }
   
   // Write history to HISTFILE on exit
-  if (histfile) {
+  if (!histfile.empty()) {
     ofstream file(histfile);
     if (file.is_open()) {
       int start = history_base;
