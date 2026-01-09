@@ -317,7 +317,15 @@ void executeBuiltinInChild(const vector<string>& args) {
     }
   }
   else if (program == "history") {
-    for (int i = history_base; i < history_base + history_length; ++i) {
+    int start = history_base;
+    int end = history_base + history_length;
+    
+    if (args.size() > 1) {
+      int n = stoi(args[1]);
+      start = max(history_base, end - n);
+    }
+    
+    for (int i = start; i < end; ++i) {
       HIST_ENTRY* entry = history_get(i);
       if (entry) {
         cout << "    " << i << "  " << entry->line << endl;
@@ -607,7 +615,15 @@ int main() {
     }
     // history
     else if (program == "history") {
-      for (int i = history_base; i < history_base + history_length; ++i) {
+      int start = history_base;
+      int end = history_base + history_length;
+      
+      if (args.size() > 1) {
+        int n = stoi(args[1]);
+        start = max(history_base, end - n);
+      }
+      
+      for (int i = start; i < end; ++i) {
         HIST_ENTRY* entry = history_get(i);
         if (entry) {
           cout << "    " << i << "  " << entry->line << endl;
