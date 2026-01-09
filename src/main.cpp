@@ -575,6 +575,21 @@ int main() {
 
   rl_attempted_completion_function = command_completion;
 
+  // HISTFILE
+  const char* histfile = getenv("HISTFILE");
+  if (histfile) {
+    ifstream file(histfile);
+    if (file.is_open()) {
+      string line;
+      while (getline(file, line)) {
+        if (!line.empty()) {
+          add_history(line.c_str());
+        }
+      }
+      file.close();
+    }
+  }
+
   // Read: Display a prompt and wait for user input
   while (true) {
     char* input = readline("$ ");
