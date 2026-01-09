@@ -106,104 +106,151 @@ struct CommandInfo {
   bool is_error_append;
 };
 
+struct PipelineInfo {
+  vector<CommandInfo> commands;
+  bool has_pipe;
+};
+
 // Parse command
-CommandInfo parseCommand(const string& command) {
-  CommandInfo info;
-  info.has_redirect = false;
-  info.is_append = false;
-  info.has_error_redirect = false;
-  info.is_error_append = false;
+PipelineInfo parsePipeline(const string& command) {
+  PipelineInfo pipeline;
+  pipeline.has_pipe = false;
   
-  vector<string> args;
-  string current_arg;
+  vector<string> command_strings;
+  string current_cmd;
   bool in_single_quotes = false;
   bool in_double_quotes = false;
   
   for (size_t i = 0; i < command.length(); ++i) {
     char c = command[i];
     
-    // Handle backslash escaping outside quotes
-    if (c == '\\' && !in_single_quotes && !in_double_quotes) {
-      if (i + 1 < command.length()) {
-        ++i;
-        current_arg += command[i]; 
-      }
-      else {
-        current_arg += c;
-      }
+    if (c == '\\' && !in_single_quotes && i + 1 < command.length()) {
+      current_cmd += c;
+      current_cmd += command[++i];
     }
-    // Handle backslash escaping inside double quotes
-    else if (c == '\\' && in_double_quotes && !in_single_quotes) {
-      if (i + 1 < command.length()) {
-        char next = command[i + 1];
-        if (next == '"' || next == '\\') {
+    else if (c == '\'' && !in_double_quotes) {
+      in_single_quotes = !in_single_quotes;
+      current_cmd += c;
+    }
+    else if (c == '"' && !in_single_quotes) {
+      in_double_quotes = !in_double_quotes;
+      current_cmd += c;
+    }
+    else if (c == '|' && !in_single_quotes && !in_double_quotes) {
+      if (!current_cmd.empty()) {
+        command_strings.push_back(current_cmd);
+        current_cmd.clear();
+      }
+      pipeline.has_pipe = true;
+    }
+    else {
+      current_cmd += c;
+    }
+  }
+  if (!current_cmd.empty()) {
+    command_strings.push_back(current_cmd);
+  }
+  
+  for (const auto& cmd_str : command_strings) {
+    CommandInfo info;
+    info.has_redirect = false;
+    info.is_append = false;
+    info.has_error_redirect = false;
+    info.is_error_append = false;
+    
+    vector<string> args;
+    string current_arg;
+    in_single_quotes = false;
+    in_double_quotes = false;
+    
+    for (size_t i = 0; i < cmd_str.length(); ++i) {
+      char c = cmd_str[i];
+      
+      // Handle backslash escaping outside quotes
+      if (c == '\\' && !in_single_quotes && !in_double_quotes) {
+        if (i + 1 < cmd_str.length()) {
           ++i;
-          current_arg += next;
+          current_arg += cmd_str[i]; 
+        }
+        else {
+          current_arg += c;
+        }
+      }
+      // Handle backslash escaping inside double quotes
+      else if (c == '\\' && in_double_quotes && !in_single_quotes) {
+        if (i + 1 < cmd_str.length()) {
+          char next = cmd_str[i + 1];
+          if (next == '"' || next == '\\') {
+            ++i;
+            current_arg += next;
+          } else {
+            current_arg += c;
+          }
         } else {
           current_arg += c;
+        }
+      }
+      else if (c == '\'' && !in_double_quotes) {
+        // Single quote toggles (only if not in double quotes)
+        in_single_quotes = !in_single_quotes;
+      } else if (c == '"' && !in_single_quotes) {
+        // Double quote toggles (only if not in single quotes)
+        in_double_quotes = !in_double_quotes;
+      } else if (isspace(c) && !in_single_quotes && !in_double_quotes) {
+        if (!current_arg.empty()) {
+          args.push_back(current_arg);
+          current_arg.clear();
         }
       } else {
         current_arg += c;
       }
     }
-    else if (c == '\'' && !in_double_quotes) {
-      // Single quote toggles (only if not in double quotes)
-      in_single_quotes = !in_single_quotes;
-    } else if (c == '"' && !in_single_quotes) {
-      // Double quote toggles (only if not in single quotes)
-      in_double_quotes = !in_double_quotes;
-    } else if (isspace(c) && !in_single_quotes && !in_double_quotes) {
-      if (!current_arg.empty()) {
-        args.push_back(current_arg);
-        current_arg.clear();
-      }
-    } else {
-      current_arg += c;
+    if (!current_arg.empty()) {
+      args.push_back(current_arg);
     }
-  }
-  if (!current_arg.empty()) {
-    args.push_back(current_arg);
-  }
-  
-  // Check for output redirection (>>, 1>>, >, or 1>) and error redirection (2>)
-  for (size_t i = 0; i < args.size(); ++i) {
-    if (args[i] == ">>" || args[i] == "1>>") {
-      info.has_redirect = true;
-      info.is_append = true;
-      if (i + 1 < args.size()) {
-        info.output_file = args[i + 1];
-        args.erase(args.begin() + i, args.begin() + i + 2);
-        --i;
-      }
-    } else if (args[i] == ">" || args[i] == "1>") {
-      info.has_redirect = true;
-      info.is_append = false;
-      if (i + 1 < args.size()) {
-        info.output_file = args[i + 1];
-        args.erase(args.begin() + i, args.begin() + i + 2);
-        --i;
-      }
-    } else if (args[i] == "2>>") {
-      info.has_error_redirect = true;
-      info.is_error_append = true;
-      if (i + 1 < args.size()) {
-        info.error_file = args[i + 1];
-        args.erase(args.begin() + i, args.begin() + i + 2);
-        --i;
-      }
-    } else if (args[i] == "2>") {
-      info.has_error_redirect = true;
-      info.is_error_append = false;
-      if (i + 1 < args.size()) {
-        info.error_file = args[i + 1];
-        args.erase(args.begin() + i, args.begin() + i + 2);
-        --i;
+    
+    // Check for output redirection (>>, 1>>, >, or 1>) and error redirection (2>)
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (args[i] == ">>" || args[i] == "1>>") {
+        info.has_redirect = true;
+        info.is_append = true;
+        if (i + 1 < args.size()) {
+          info.output_file = args[i + 1];
+          args.erase(args.begin() + i, args.begin() + i + 2);
+          --i;
+        }
+      } else if (args[i] == ">" || args[i] == "1>") {
+        info.has_redirect = true;
+        info.is_append = false;
+        if (i + 1 < args.size()) {
+          info.output_file = args[i + 1];
+          args.erase(args.begin() + i, args.begin() + i + 2);
+          --i;
+        }
+      } else if (args[i] == "2>>") {
+        info.has_error_redirect = true;
+        info.is_error_append = true;
+        if (i + 1 < args.size()) {
+          info.error_file = args[i + 1];
+          args.erase(args.begin() + i, args.begin() + i + 2);
+          --i;
+        }
+      } else if (args[i] == "2>") {
+        info.has_error_redirect = true;
+        info.is_error_append = false;
+        if (i + 1 < args.size()) {
+          info.error_file = args[i + 1];
+          args.erase(args.begin() + i, args.begin() + i + 2);
+          --i;
+        }
       }
     }
+    
+    info.args = args;
+    pipeline.commands.push_back(info);
   }
   
-  info.args = args;
-  return info;
+  return pipeline;
 }
 
 // Find executable in PATH
@@ -268,6 +315,112 @@ void executeProgram(const string& path, const vector<string>& args, const string
   }
 }
 
+// Execute pipeline
+void executePipeline(const vector<CommandInfo>& commands) {
+  if (commands.empty()) return;
+  
+  int num_commands = commands.size();
+  vector<pid_t> pids;
+  
+  // Create pipes: we need (num_commands - 1) pipes
+  
+  // Each pipe is an array of 2 ints: [read_fd, write_fd]
+  vector<vector<int>> pipes(num_commands - 1, vector<int>(2));
+  for (int i = 0; i < num_commands - 1; ++i) {
+    if (pipe(pipes[i].data()) == -1) {
+      cerr << "Pipe creation failed" << endl;
+      return;
+    }
+  }
+  
+  // Execute each command in the pipeline
+  for (int i = 0; i < num_commands; ++i) {
+    const CommandInfo& cmd = commands[i];
+    
+    // Find executable path
+    string path = findInPath(cmd.args[0]);
+    if (path.empty()) {
+      cerr << cmd.args[0] << ": command not found" << endl;
+      for (int j = 0; j < num_commands - 1; ++j) {
+        close(pipes[j][0]);
+        close(pipes[j][1]);
+      }
+      return;
+    }
+    
+    pid_t pid = fork();
+    
+    if (pid == 0) {      
+      // Set up stdin: read from previous pipe (except for first command)
+      if (i > 0) {
+        dup2(pipes[i - 1][0], STDIN_FILENO);
+      }
+      
+      // Set up stdout: write to next pipe (except for last command)
+      if (i < num_commands - 1) {
+        dup2(pipes[i][1], STDOUT_FILENO);
+      }
+      
+      // Close all pipe fds in child
+      for (int j = 0; j < num_commands - 1; ++j) {
+        close(pipes[j][0]);
+        close(pipes[j][1]);
+      }
+      
+      // Handle output redirection for last command
+      if (i == num_commands - 1 && cmd.has_redirect && !cmd.output_file.empty()) {
+        int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
+        int fd = open(cmd.output_file.c_str(), flags, 0644);
+        if (fd == -1) {
+          cerr << "Failed to open " << cmd.output_file << " for writing" << endl;
+          exit(1);
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+      }
+      
+      // Handle error redirection
+      if (cmd.has_error_redirect && !cmd.error_file.empty()) {
+        int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
+        int fd = open(cmd.error_file.c_str(), flags, 0644);
+        if (fd == -1) {
+          cerr << "Failed to open " << cmd.error_file << " for writing" << endl;
+          exit(1);
+        }
+        dup2(fd, STDERR_FILENO);
+        close(fd);
+      }
+      
+      // Execute command
+      vector<char*> argv;
+      for (const auto& arg : cmd.args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+      }
+      argv.push_back(nullptr);
+      
+      execv(path.c_str(), argv.data());
+      cerr << "Failed to execute " << path << endl;
+      exit(1);
+    } else if (pid > 0) {
+      pids.push_back(pid);
+    } else {
+      cerr << "Fork failed" << endl;
+    }
+  }
+  
+  // Close all pipes in parent
+  for (int i = 0; i < num_commands - 1; ++i) {
+    close(pipes[i][0]);
+    close(pipes[i][1]);
+  }
+  
+  // Wait for all child processes
+  for (pid_t pid : pids) {
+    int status;
+    waitpid(pid, &status, 0);
+  }
+}
+
 int main() {
   // Flush after every std::cout / std:cerr
   cout << unitbuf;
@@ -288,9 +441,20 @@ int main() {
     free(input);
 
     // Eval: Parse and execute the command
-    CommandInfo cmd_info = parseCommand(command);
-    if (cmd_info.args.empty()) continue;
+    PipelineInfo pipeline = parsePipeline(command);
     
+    if (pipeline.commands.empty() || 
+        (pipeline.commands.size() == 1 && pipeline.commands[0].args.empty())) {
+      continue;
+    }
+    
+    if (pipeline.has_pipe && pipeline.commands.size() > 1) {
+      executePipeline(pipeline.commands);
+      continue;
+    }
+    
+    // Handle single command
+    CommandInfo cmd_info = pipeline.commands[0];
     vector<string>& args = cmd_info.args;
     string program = args[0];
     
