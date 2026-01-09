@@ -333,11 +333,28 @@ void executeBuiltinInChild(const vector<string>& args) {
       } else {
         cerr << "history: " << filename << ": No such file or directory" << endl;
       }
+    } else if (args.size() > 2 && args[1] == "-w") {
+      // history -w <file>
+      string filename = args[2];
+      ofstream file(filename);
+      if (file.is_open()) {
+        int start = history_base;
+        int end = history_base + history_length;
+        for (int i = start; i < end; ++i) {
+          HIST_ENTRY* entry = history_get(i);
+          if (entry) {
+            file << entry->line << endl;
+          }
+        }
+        file.close();
+      } else {
+        cerr << "history: " << filename << ": cannot create" << endl;
+      }
     } else {
       int start = history_base;
       int end = history_base + history_length;
       
-      if (args.size() > 1 && args[1] != "-r") {
+      if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
         int n = stoi(args[1]);
         start = max(history_base, end - n);
       }
@@ -648,11 +665,28 @@ int main() {
         } else {
           cerr << "history: " << filename << ": No such file or directory" << endl;
         }
+      } else if (args.size() > 2 && args[1] == "-w") {
+        // history -w <file>
+        string filename = args[2];
+        ofstream file(filename);
+        if (file.is_open()) {
+          int start = history_base;
+          int end = history_base + history_length;
+          for (int i = start; i < end; ++i) {
+            HIST_ENTRY* entry = history_get(i);
+            if (entry) {
+              file << entry->line << endl;
+            }
+          }
+          file.close();
+        } else {
+          cerr << "history: " << filename << ": cannot create" << endl;
+        }
       } else {
         int start = history_base;
         int end = history_base + history_length;
         
-        if (args.size() > 1 && args[1] != "-r") {
+        if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
           int n = stoi(args[1]);
           start = max(history_base, end - n);
         }
