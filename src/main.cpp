@@ -19,6 +19,8 @@ From CodeCrafters.io build-your-own-shell (C++23)
 using namespace std;
 namespace fs = std::filesystem;
 
+int last_appended_index = -1;
+
 const char* builtin_commands[] = {
   "echo",
   "exit",
@@ -334,7 +336,7 @@ void executeBuiltinInChild(const vector<string>& args) {
         cerr << "history: " << filename << ": No such file or directory" << endl;
       }
     } else if (args.size() > 2 && args[1] == "-w") {
-      // history -w <file>
+      // history -w <file> - write history to file
       string filename = args[2];
       ofstream file(filename);
       if (file.is_open()) {
@@ -347,6 +349,24 @@ void executeBuiltinInChild(const vector<string>& args) {
           }
         }
         file.close();
+      } else {
+        cerr << "history: " << filename << ": cannot create" << endl;
+      }
+    } else if (args.size() > 2 && args[1] == "-a") {
+      // history -a <file> - append new commands to file
+      string filename = args[2];
+      ofstream file(filename, ios::app);
+      if (file.is_open()) {
+        int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
+        int end = history_base + history_length;
+        for (int i = start; i < end; ++i) {
+          HIST_ENTRY* entry = history_get(i);
+          if (entry) {
+            file << entry->line << endl;
+          }
+        }
+        file.close();
+        last_appended_index = end - 1;
       } else {
         cerr << "history: " << filename << ": cannot create" << endl;
       }
@@ -664,6 +684,23 @@ int main() {
           file.close();
         } else {
           cerr << "history: " << filename << ": No such file or directory" << endl;
+        }if (args.size() > 2 && args[1] == "-a") {
+        // history -a <file>
+        string filename = args[2];
+        ofstream file(filename, ios::app);
+        if (file.is_open()) {
+          int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
+          int end = history_base + history_length;
+          for (int i = start; i < end; ++i) {
+            HIST_ENTRY* entry = history_get(i);
+            if (entry) {
+              file << entry->line << endl;
+            }
+          }
+          file.close();
+          last_appended_index = end - 1;
+        } else {
+          cerr << "history: " << filename << ": cannot create" << endl;
         }
       } else if (args.size() > 2 && args[1] == "-w") {
         // history -w <file>
