@@ -24,6 +24,7 @@ const char* builtin_commands[] = {
   "type",
   "pwd",
   "cd",
+  "history",
   nullptr
 };
 
@@ -259,7 +260,7 @@ PipelineInfo parsePipeline(const string& command) {
 string findInPath(const string& program);
 
 bool isBuiltin(const string& cmd) {
-  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd";
+  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history";
 }
 
 // Execute built-in command (for use in child process during pipeline)
@@ -315,7 +316,14 @@ void executeBuiltinInChild(const vector<string>& args) {
       cout << "cd: " << path << ": No such file or directory" << endl;
     }
   }
-  
+  else if (program == "history") {
+    for (int i = history_base; i < history_base + history_length; ++i) {
+      HIST_ENTRY* entry = history_get(i);
+      if (entry) {
+        cout << "    " << i << "  " << entry->line << endl;
+      }
+    }
+  }
   exit(0);
 }
 
@@ -515,6 +523,11 @@ int main() {
     
     string command(input);
     free(input);
+    
+    // Add non-empty commands to history
+    if (!command.empty()) {
+      add_history(command.c_str());
+    }
 
     // Eval: Parse and execute the command
     PipelineInfo pipeline = parsePipeline(command);
@@ -590,6 +603,15 @@ int main() {
         cout << cwd << endl;
       } else {
         cerr << "pwd: error getting current directory" << endl;
+      }
+    }
+    // history
+    else if (program == "history") {
+      for (int i = history_base; i < history_base + history_length; ++i) {
+        HIST_ENTRY* entry = history_get(i);
+        if (entry) {
+          cout << "    " << i << "  " << entry->line << endl;
+        }
       }
     }
     // cd
