@@ -816,5 +816,22 @@ int main() {
 
     // Loop: Return to step 1 and wait for the next command
   }
+  
+  // Write history to HISTFILE on exit
+  if (histfile) {
+    ofstream file(histfile);
+    if (file.is_open()) {
+      int start = history_base;
+      int end = history_base + history_length;
+      for (int i = start; i < end; ++i) {
+        HIST_ENTRY* entry = history_get(i);
+        if (entry) {
+          file << entry->line << endl;
+        }
+      }
+      file.close();
+    }
+  }
+  
   return 0;
 }
