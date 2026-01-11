@@ -1048,3 +1048,4 @@ dkms.conf
 vcpkg_installed
 
 shell
+main
