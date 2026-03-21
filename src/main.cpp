@@ -131,7 +131,11 @@ char* filename_generator(const char* text, int state) {
       for (const auto& entry : fs::directory_iterator(search_dir)) {
         string filename = entry.path().filename().string();
         if (filename.length() >= prefix_len && filename.substr(0, prefix_len) == file_prefix) {
-          matches.push_back(dir_path + filename);
+          string match = dir_path + filename;
+          if (fs::is_directory(entry.status())) {
+            match += "/";
+          }
+          matches.push_back(match);
         }
       }
     } catch (...) {
@@ -140,7 +144,14 @@ char* filename_generator(const char* text, int state) {
   }
 
   if (match_index < matches.size()) {
-    return strdup(matches[match_index++].c_str());
+    string match = matches[match_index++];
+    // Suppress trailing space for directories (they end with '/')
+    if (!match.empty() && match.back() == '/') {
+      rl_completion_append_character = '\0';
+    } else {
+      rl_completion_append_character = ' ';
+    }
+    return strdup(match.c_str());
   }
 
   return nullptr;
