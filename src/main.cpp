@@ -110,14 +110,28 @@ char* filename_generator(const char* text, int state) {
     matches.clear();
     match_index = 0;
 
-    string prefix(text ? text : "");
-    size_t len = prefix.length();
+    string input(text ? text : "");
+
+    // Split into directory and file prefix at last '/'
+    string dir_path;
+    string file_prefix;
+    size_t last_slash = input.rfind('/');
+    if (last_slash != string::npos) {
+      dir_path = input.substr(0, last_slash + 1);
+      file_prefix = input.substr(last_slash + 1);
+    } else {
+      dir_path = "";
+      file_prefix = input;
+    }
+
+    string search_dir = dir_path.empty() ? "." : dir_path;
+    size_t prefix_len = file_prefix.length();
 
     try {
-      for (const auto& entry : fs::directory_iterator(".")) {
+      for (const auto& entry : fs::directory_iterator(search_dir)) {
         string filename = entry.path().filename().string();
-        if (filename.length() >= len && filename.substr(0, len) == prefix) {
-          matches.push_back(filename);
+        if (filename.length() >= prefix_len && filename.substr(0, prefix_len) == file_prefix) {
+          matches.push_back(dir_path + filename);
         }
       }
     } catch (...) {
