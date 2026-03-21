@@ -102,15 +102,45 @@ char* command_generator(const char* text, int state) {
   return nullptr;
 }
 
+char* filename_generator(const char* text, int state) {
+  static vector<string> matches;
+  static size_t match_index;
+
+  if (!state) {
+    matches.clear();
+    match_index = 0;
+
+    string prefix(text ? text : "");
+    size_t len = prefix.length();
+
+    try {
+      for (const auto& entry : fs::directory_iterator(".")) {
+        string filename = entry.path().filename().string();
+        if (filename.length() >= len && filename.substr(0, len) == prefix) {
+          matches.push_back(filename);
+        }
+      }
+    } catch (...) {
+      // Skip errors
+    }
+  }
+
+  if (match_index < matches.size()) {
+    return strdup(matches[match_index++].c_str());
+  }
+
+  return nullptr;
+}
+
 char** command_completion(const char* text, int start, int end) {
-  // Only complete if we're at the beginning of the line
+  // Complete commands at the beginning of the line
   if (start == 0) {
     return rl_completion_matches(text, command_generator);
   }
-  
-  // Don't attempt filename completion for arguments
+
+  // Complete filenames for arguments
   rl_attempted_completion_over = 1;
-  return nullptr;
+  return rl_completion_matches(text, filename_generator);
 }
 
 struct CommandInfo {
