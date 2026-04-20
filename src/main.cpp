@@ -897,10 +897,15 @@ int main() {
     }
     // jobs
     else if (program == "jobs") {
-      for (const auto& job : bg_jobs) {
+      int n = bg_jobs.size();
+      for (int i = 0; i < n; i++) {
+        const auto& job = bg_jobs[i];
+        char marker = ' ';
+        if (i == n - 1) marker = '+';
+        else if (i == n - 2) marker = '-';
         string status = "Running";
         status.resize(24, ' ');
-        cout << "[" << job.job_number << "]+  " << status << job.command << endl;
+        cout << "[" << job.job_number << "]" << marker << "  " << status << job.command << endl;
       }
     }
     // cd
