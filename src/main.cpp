@@ -21,6 +21,15 @@ namespace fs = std::filesystem;
 
 int last_appended_index = -1;
 
+struct BackgroundJob {
+  int job_number;
+  pid_t pid;
+  string command;
+};
+
+vector<BackgroundJob> bg_jobs;
+int next_job_number = 1;
+
 const char* builtin_commands[] = {
   "echo",
   "exit",
@@ -716,7 +725,48 @@ int main() {
     // Handle single command
     CommandInfo cmd_info = pipeline.commands[0];
     vector<string>& args = cmd_info.args;
+    
+    // Check for background execution (&)
+    bool run_in_bg = false;
+    if (!args.empty() && args.back() == "&") {
+      run_in_bg = true;
+      args.pop_back();
+      if (args.empty()) continue;
+    }
+    
     string program = args[0];
+    
+    // Handle background execution for external commands
+    if (run_in_bg) {
+      string path = findInPath(program);
+      if (!path.empty()) {
+        pid_t pid = fork();
+        if (pid == 0) {
+          vector<vector<char>> argv_storage;
+          vector<char*> argv;
+          argv_storage.reserve(args.size());
+          argv.reserve(args.size() + 1);
+          for (const auto& arg : args) {
+            argv_storage.emplace_back(arg.begin(), arg.end());
+            argv_storage.back().push_back('\0');
+            argv.push_back(argv_storage.back().data());
+          }
+          argv.push_back(nullptr);
+          execv(path.c_str(), argv.data());
+          cerr << "Failed to execute " << path << endl;
+          exit(1);
+        } else if (pid > 0) {
+          int job_num = next_job_number++;
+          bg_jobs.push_back({job_num, pid, command});
+          cout << "[" << job_num << "] " << pid << endl;
+        } else {
+          cerr << "Fork failed" << endl;
+        }
+      } else {
+        cout << program << ": command not found" << endl;
+      }
+      continue;
+    }
     
     int saved_stdout = -1;
     int redirect_fd = -1;
@@ -847,7 +897,6 @@ int main() {
     }
     // jobs
     else if (program == "jobs") {
-      // Empty implementation - no background jobs to list
     }
     // cd
     else if (program == "cd" && args.size() > 1) {
