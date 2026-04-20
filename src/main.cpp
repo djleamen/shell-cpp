@@ -30,6 +30,36 @@ struct BackgroundJob {
 vector<BackgroundJob> bg_jobs;
 int next_job_number = 1;
 
+void reapJobs() {
+  vector<int> done_indices;
+  for (int i = 0; i < (int)bg_jobs.size(); i++) {
+    int wstatus;
+    pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+    if (result > 0 && WIFEXITED(wstatus)) {
+      done_indices.push_back(i);
+    }
+  }
+  int n = bg_jobs.size();
+  for (int i = 0; i < n; i++) {
+    if (find(done_indices.begin(), done_indices.end(), i) != done_indices.end()) {
+      const auto& job = bg_jobs[i];
+      char marker = ' ';
+      if (i == n - 1) marker = '+';
+      else if (i == n - 2) marker = '-';
+      string status_str = "Done";
+      status_str.resize(24, ' ');
+      string cmd = job.command;
+      if (cmd.size() >= 2 && cmd.substr(cmd.size() - 2) == " &") {
+        cmd = cmd.substr(0, cmd.size() - 2);
+      }
+      cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
+    }
+  }
+  for (int i = done_indices.size() - 1; i >= 0; i--) {
+    bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
+  }
+}
+
 const char* builtin_commands[] = {
   "echo",
   "exit",
@@ -694,6 +724,7 @@ int main() {
 
   // Read: Display a prompt and wait for user input
   while (true) {
+    reapJobs();
     char* input = readline("$ ");
     
     // Check for EOF (Ctrl+D)
@@ -897,36 +928,16 @@ int main() {
     }
     // jobs
     else if (program == "jobs") {
-      // Check each job's status
-      vector<int> done_indices;
-      for (int i = 0; i < (int)bg_jobs.size(); i++) {
-        int wstatus;
-        pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
-        if (result > 0 && WIFEXITED(wstatus)) {
-          done_indices.push_back(i);
-        }
-      }
+      reapJobs();
       int n = bg_jobs.size();
       for (int i = 0; i < n; i++) {
         const auto& job = bg_jobs[i];
         char marker = ' ';
         if (i == n - 1) marker = '+';
         else if (i == n - 2) marker = '-';
-        bool is_done = find(done_indices.begin(), done_indices.end(), i) != done_indices.end();
-        string status_str = is_done ? "Done" : "Running";
+        string status_str = "Running";
         status_str.resize(24, ' ');
-        string cmd = job.command;
-        if (is_done) {
-          // Remove trailing " &" for Done jobs
-          if (cmd.size() >= 2 && cmd.substr(cmd.size() - 2) == " &") {
-            cmd = cmd.substr(0, cmd.size() - 2);
-          }
-        }
-        cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
-      }
-      // Remove done jobs from the list
-      for (int i = done_indices.size() - 1; i >= 0; i--) {
-        bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
+        cout << "[" << job.job_number << "]" << marker << "  " << status_str << job.command << endl;
       }
     }
     // cd
