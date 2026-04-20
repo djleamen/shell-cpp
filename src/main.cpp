@@ -28,7 +28,18 @@ struct BackgroundJob {
 };
 
 vector<BackgroundJob> bg_jobs;
-int next_job_number = 1;
+
+int nextJobNumber() {
+  int num = 1;
+  while (true) {
+    bool used = false;
+    for (const auto& job : bg_jobs) {
+      if (job.job_number == num) { used = true; break; }
+    }
+    if (!used) return num;
+    num++;
+  }
+}
 
 void reapJobs() {
   vector<int> done_indices;
@@ -787,7 +798,7 @@ int main() {
           cerr << "Failed to execute " << path << endl;
           exit(1);
         } else if (pid > 0) {
-          int job_num = next_job_number++;
+          int job_num = nextJobNumber();
           bg_jobs.push_back({job_num, pid, command});
           cout << "[" << job_num << "] " << pid << endl;
         } else {
