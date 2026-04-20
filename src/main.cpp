@@ -897,6 +897,11 @@ int main() {
     }
     // jobs
     else if (program == "jobs") {
+      for (const auto& job : bg_jobs) {
+        string status = "Running";
+        status.resize(24, ' ');
+        cout << "[" << job.job_number << "]+  " << status << job.command << endl;
+      }
     }
     // cd
     else if (program == "cd" && args.size() > 1) {
