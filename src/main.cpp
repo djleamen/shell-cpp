@@ -28,6 +28,7 @@ const char* builtin_commands[] = {
   "pwd",
   "cd",
   "history",
+  "jobs",
   nullptr
 };
 
@@ -328,7 +329,7 @@ PipelineInfo parsePipeline(const string& command) {
 string findInPath(const string& program);
 
 bool isBuiltin(const string& cmd) {
-  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history";
+  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history" || cmd == "jobs";
 }
 
 // Execute built-in command (for use in child process during pipeline)
@@ -385,6 +386,9 @@ void executeBuiltinInChild(const vector<string>& args) {
     if (chdir(path.c_str()) != 0) {
       cout << "cd: " << path << ": No such file or directory" << endl;
     }
+  }
+  else if (program == "jobs") {
+    exit(0);
   }
   else if (program == "history") {
     if (args.size() > 2 && args[1] == "-r") {
@@ -840,6 +844,10 @@ int main() {
           }
         }
       }
+    }
+    // jobs
+    else if (program == "jobs") {
+      // Empty implementation - no background jobs to list
     }
     // cd
     else if (program == "cd" && args.size() > 1) {
