@@ -211,13 +211,55 @@ char* filename_generator(const char* text, int state) {
   return nullptr;
 }
 
+vector<string> completer_results;
+
+char* completer_generator(const char* text, int state) {
+  static size_t idx;
+  if (!state) {
+    idx = 0;
+  }
+  while (idx < completer_results.size()) {
+    string candidate = completer_results[idx++];
+    rl_completion_append_character = ' ';
+    return strdup(candidate.c_str());
+  }
+  return nullptr;
+}
+
 char** command_completion(const char* text, int start, int end) {
   // Complete commands at the beginning of the line
   if (start == 0) {
     return rl_completion_matches(text, command_generator);
   }
 
-  // Complete filenames for arguments
+  // Check for a registered completer for the command on this line
+  string line(rl_line_buffer ? rl_line_buffer : "");
+  string cmd;
+  {
+    size_t sp = line.find(' ');
+    cmd = (sp != string::npos) ? line.substr(0, sp) : line;
+  }
+
+  auto it = completion_registry.find(cmd);
+  if (it != completion_registry.end()) {
+    completer_results.clear();
+    FILE* fp = popen(it->second.c_str(), "r");
+    if (fp) {
+      char buf[4096];
+      while (fgets(buf, sizeof(buf), fp)) {
+        string out(buf);
+        if (!out.empty() && out.back() == '\n') out.pop_back();
+        if (!out.empty()) completer_results.push_back(out);
+      }
+      pclose(fp);
+    }
+    if (!completer_results.empty()) {
+      rl_attempted_completion_over = 1;
+      return rl_completion_matches(text, completer_generator);
+    }
+  }
+
+  // Fall back to filename completion
   rl_attempted_completion_over = 1;
   return rl_completion_matches(text, filename_generator);
 }
