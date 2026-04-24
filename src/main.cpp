@@ -47,6 +47,7 @@ int nextJobNumber() {
 }
 
 void sigchld_handler(int) {
+  int saved_errno = errno;
   int wstatus;
   pid_t pid;
   while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
@@ -57,6 +58,7 @@ void sigchld_handler(int) {
       }
     }
   }
+  errno = saved_errno;
 }
 
 void reapJobs() {
@@ -1055,7 +1057,20 @@ int main() {
     }
     // jobs
     else if (program == "jobs") {
-      // Check each job's status and display all in order
+      // Drain all exited children first
+      {
+        int wstatus;
+        pid_t p;
+        while ((p = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+          for (auto& job : bg_jobs) {
+            if (job.pid == p && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
+              job.done = true;
+              break;
+            }
+          }
+        }
+      }
+      // Fallback: check individual jobs (handles ECHILD if already reaped)
       for (int i = 0; i < (int)bg_jobs.size(); i++) {
         if (!bg_jobs[i].done) {
           int wstatus;
