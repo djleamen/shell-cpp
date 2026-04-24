@@ -265,7 +265,41 @@ char** command_completion(const char* text, int start, int end) {
   auto it = completion_registry.find(cmd);
   if (it != completion_registry.end()) {
     completer_results.clear();
-    FILE* fp = popen(it->second.c_str(), "r");
+
+    string before_cursor = line.substr(0, start);
+    string prev_word;
+    {
+      // Tokenize before_cursor by whitespace to find the last token
+      vector<string> tokens;
+      istringstream iss(before_cursor);
+      string tok;
+      while (iss >> tok) tokens.push_back(tok);
+      if (!before_cursor.empty() && !isspace((unsigned char)before_cursor.back())) {
+        // last token is the current partial word, prev is second-to-last
+        if (tokens.size() >= 2) prev_word = tokens[tokens.size() - 2];
+      } else {
+        if (tokens.size() >= 1) prev_word = tokens.back();
+      }
+      // If prev_word is the command itself, it means no real "prev" word (e.g. "git <TAB>")
+      if (prev_word == cmd) prev_word = "";
+    }
+
+    // Build the command string with shell-escaped arguments:
+    // completer_script <cmd> <current_word> <prev_word>
+    auto shell_escape = [](const string& s) -> string {
+      string out = "'";
+      for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+      }
+      out += "'";
+      return out;
+    };
+
+    string invoke = it->second + " " + shell_escape(cmd) + " " +
+                    shell_escape(string(text)) + " " + shell_escape(prev_word);
+
+    FILE* fp = popen(invoke.c_str(), "r");
     if (fp) {
       char buf[4096];
       while (fgets(buf, sizeof(buf), fp)) {
