@@ -286,6 +286,7 @@ char** command_completion(const char* text, int start, int end) {
 
     // Build the command string with shell-escaped arguments:
     // completer_script <cmd> <current_word> <prev_word>
+    // Also set COMP_LINE and COMP_POINT as environment variables.
     auto shell_escape = [](const string& s) -> string {
       string out = "'";
       for (char c : s) {
@@ -296,7 +297,14 @@ char** command_completion(const char* text, int start, int end) {
       return out;
     };
 
-    string invoke = it->second + " " + shell_escape(cmd) + " " +
+    // COMP_LINE is the full line up to the cursor (start = cursor position here)
+    string comp_line = line.substr(0, start) + string(text);
+    // COMP_POINT is the byte index of the cursor (end of the current partial word)
+    string comp_point = to_string(comp_line.size());
+
+    string invoke = "COMP_LINE=" + shell_escape(comp_line) +
+                    " COMP_POINT=" + comp_point +
+                    " " + it->second + " " + shell_escape(cmd) + " " +
                     shell_escape(string(text)) + " " + shell_escape(prev_word);
 
     FILE* fp = popen(invoke.c_str(), "r");
