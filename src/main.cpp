@@ -15,11 +15,13 @@ From CodeCrafters.io build-your-own-shell (C++23)
 #include <fstream>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <map>
 
 using namespace std;
 namespace fs = std::filesystem;
 
 int last_appended_index = -1;
+map<string, string> completion_registry;
 
 struct BackgroundJob {
   int job_number;
@@ -973,8 +975,17 @@ int main() {
     }
     // complete
     else if (program == "complete") {
-      if (args.size() > 2 && args[1] == "-p") {
-        cerr << "complete: " << args[2] << ": no completion specification" << endl;
+      if (args.size() > 3 && args[1] == "-C") {
+        // complete -C <path> <command>
+        completion_registry[args[3]] = args[2];
+      } else if (args.size() > 2 && args[1] == "-p") {
+        string cmd = args[2];
+        auto it = completion_registry.find(cmd);
+        if (it != completion_registry.end()) {
+          cout << "complete -C '" << it->second << "' " << cmd << endl;
+        } else {
+          cerr << "complete: " << cmd << ": no completion specification" << endl;
+        }
       }
     }
     // cd
