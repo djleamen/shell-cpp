@@ -973,7 +973,9 @@ int main() {
     }
     // complete
     else if (program == "complete") {
-      // Stub: registration will be implemented in later stages
+      if (args.size() > 2 && args[1] == "-p") {
+        cerr << "complete: " << args[2] << ": no completion specification" << endl;
+      }
     }
     // cd
     else if (program == "cd" && args.size() > 1) {
