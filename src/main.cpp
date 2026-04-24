@@ -79,6 +79,7 @@ const char* builtin_commands[] = {
   "cd",
   "history",
   "jobs",
+  "complete",
   nullptr
 };
 
@@ -379,7 +380,7 @@ PipelineInfo parsePipeline(const string& command) {
 string findInPath(const string& program);
 
 bool isBuiltin(const string& cmd) {
-  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history" || cmd == "jobs";
+  return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history" || cmd == "jobs" || cmd == "complete";
 }
 
 // Execute built-in command (for use in child process during pipeline)
@@ -969,6 +970,10 @@ int main() {
       for (int i = done_indices.size() - 1; i >= 0; i--) {
         bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
       }
+    }
+    // complete
+    else if (program == "complete") {
+      // Stub: registration will be implemented in later stages
     }
     // cd
     else if (program == "cd" && args.size() > 1) {
