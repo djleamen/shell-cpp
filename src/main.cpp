@@ -16,6 +16,8 @@ From CodeCrafters.io build-your-own-shell (C++23)
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <map>
+#include <csignal>
+#include <cerrno>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -27,6 +29,7 @@ struct BackgroundJob {
   int job_number;
   pid_t pid;
   string command;
+  bool done = false;
 };
 
 vector<BackgroundJob> bg_jobs;
@@ -43,12 +46,31 @@ int nextJobNumber() {
   }
 }
 
+void sigchld_handler(int) {
+  int wstatus;
+  pid_t pid;
+  while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+    for (auto& job : bg_jobs) {
+      if (job.pid == pid && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
+        job.done = true;
+        break;
+      }
+    }
+  }
+}
+
 void reapJobs() {
   vector<int> done_indices;
   for (int i = 0; i < (int)bg_jobs.size(); i++) {
-    int wstatus;
-    pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
-    if (result > 0 && WIFEXITED(wstatus)) {
+    if (!bg_jobs[i].done) {
+      int wstatus;
+      pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+      if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
+          (result < 0 && errno == ECHILD)) {
+        bg_jobs[i].done = true;
+      }
+    }
+    if (bg_jobs[i].done) {
       done_indices.push_back(i);
     }
   }
@@ -758,6 +780,13 @@ int main() {
 
   rl_attempted_completion_function = command_completion;
 
+  // Set up SIGCHLD handler to mark background jobs as done asynchronously
+  struct sigaction sa;
+  sa.sa_handler = sigchld_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+  sigaction(SIGCHLD, &sa, nullptr);
+
   // HISTFILE - safely get and store environment variable
   string histfile;
   const char* histfile_env = getenv("HISTFILE");
@@ -985,11 +1014,19 @@ int main() {
     // jobs
     else if (program == "jobs") {
       // Check each job's status and display all in order
+      for (int i = 0; i < (int)bg_jobs.size(); i++) {
+        if (!bg_jobs[i].done) {
+          int wstatus;
+          pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+          if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
+              (result < 0 && errno == ECHILD)) {
+            bg_jobs[i].done = true;
+          }
+        }
+      }
       vector<int> done_indices;
       for (int i = 0; i < (int)bg_jobs.size(); i++) {
-        int wstatus;
-        pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
-        if (result > 0 && WIFEXITED(wstatus)) {
+        if (bg_jobs[i].done) {
           done_indices.push_back(i);
         }
       }
