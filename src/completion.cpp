@@ -1,0 +1,221 @@
+/**
+ * @file completion.cpp
+ * @brief GNU Readline tab-completion generators and hooks.
+ */
+#include "completion.h"
+#include "executor.h"
+
+#include <sstream>
+#include <cstdio>
+#include <cstring>
+#include <algorithm>
+#include <filesystem>
+#include <readline/history.h>
+
+using namespace std;
+namespace fs = std::filesystem;
+
+vector<string> completer_results;
+
+char* command_generator(const char* text, int state) {
+  static int list_index;
+  static size_t len;
+  static string search_text;
+  static vector<string> path_executables;
+  static size_t path_exec_index;
+  static bool builtins_done;
+
+  if (!state) {
+    list_index = 0;
+    search_text = text ? text : "";
+    len = search_text.length();
+    path_executables.clear();
+    path_exec_index = 0;
+    builtins_done = false;
+
+    const char* path_env = getenv("PATH");
+    if (path_env) {
+      stringstream ss(path_env);
+      string dir;
+      while (getline(ss, dir, ':')) {
+        if (!fs::exists(dir)) continue;
+        try {
+          for (const auto& entry : fs::directory_iterator(dir)) {
+            if (entry.is_regular_file()) {
+              string filename = entry.path().filename().string();
+              if (filename.length() >= len && filename.substr(0, len) == search_text) {
+                auto perms = entry.status().permissions();
+                if ((perms & fs::perms::owner_exec) != fs::perms::none ||
+                    (perms & fs::perms::group_exec) != fs::perms::none ||
+                    (perms & fs::perms::others_exec) != fs::perms::none) {
+                  if (find(path_executables.begin(), path_executables.end(), filename) == path_executables.end()) {
+                    path_executables.push_back(filename);
+                  }
+                }
+              }
+            }
+          }
+        } catch (...) {}
+      }
+    }
+  }
+
+  if (!builtins_done) {
+    while (builtin_commands[list_index]) {
+      const char* name = builtin_commands[list_index++];
+      string cmd_name(name);
+      if (cmd_name.length() >= len && cmd_name.substr(0, len) == search_text) {
+        return strdup(name);
+      }
+    }
+    builtins_done = true;
+  }
+
+  if (path_exec_index < path_executables.size()) {
+    return strdup(path_executables[path_exec_index++].c_str());
+  }
+
+  return nullptr;
+}
+
+char* filename_generator(const char* text, int state) {
+  static vector<string> matches;
+  static size_t match_index;
+
+  if (!state) {
+    matches.clear();
+    match_index = 0;
+
+    string input(text ? text : "");
+    string dir_path;
+    string file_prefix;
+    size_t last_slash = input.rfind('/');
+    if (last_slash != string::npos) {
+      dir_path = input.substr(0, last_slash + 1);
+      file_prefix = input.substr(last_slash + 1);
+    } else {
+      dir_path = "";
+      file_prefix = input;
+    }
+
+    string search_dir = dir_path.empty() ? "." : dir_path;
+    size_t prefix_len = file_prefix.length();
+
+    try {
+      for (const auto& entry : fs::directory_iterator(search_dir)) {
+        string filename = entry.path().filename().string();
+        if (filename.length() >= prefix_len && filename.substr(0, prefix_len) == file_prefix) {
+          string match = dir_path + filename;
+          if (fs::is_directory(entry.status())) {
+            match += "/";
+          }
+          matches.push_back(match);
+        }
+      }
+    } catch (...) {}
+  }
+
+  if (match_index < matches.size()) {
+    string match = matches[match_index++];
+    if (!match.empty() && match.back() == '/') {
+      rl_completion_append_character = '\0';
+    } else {
+      rl_completion_append_character = ' ';
+    }
+    return strdup(match.c_str());
+  }
+
+  return nullptr;
+}
+
+char* completer_generator(const char* /*text*/, int state) {
+  static size_t idx;
+  if (!state) {
+    idx = 0;
+  }
+  while (idx < completer_results.size()) {
+    string candidate = completer_results[idx++];
+    rl_completion_append_character = ' ';
+    return strdup(candidate.c_str());
+  }
+  return nullptr;
+}
+
+char** command_completion(const char* text, int start, int /*end*/) {
+  if (start == 0) {
+    return rl_completion_matches(text, command_generator);
+  }
+
+  string line(rl_line_buffer ? rl_line_buffer : "");
+  string cmd;
+  {
+    size_t sp = line.find(' ');
+    cmd = (sp != string::npos) ? line.substr(0, sp) : line;
+  }
+
+  auto it = completion_registry.find(cmd);
+  if (it != completion_registry.end()) {
+    completer_results.clear();
+
+    string before_cursor = line.substr(0, start);
+    string prev_word;
+    {
+      vector<string> tokens;
+      istringstream iss(before_cursor);
+      string tok;
+      while (iss >> tok) tokens.push_back(tok);
+      if (!before_cursor.empty() && !isspace((unsigned char)before_cursor.back())) {
+        if (tokens.size() >= 2) prev_word = tokens[tokens.size() - 2];
+      } else {
+        if (tokens.size() >= 1) prev_word = tokens.back();
+      }
+    }
+
+    auto shell_escape = [](const string& s) -> string {
+      string out = "'";
+      for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+      }
+      out += "'";
+      return out;
+    };
+
+    string comp_line = line.substr(0, start) + string(text);
+    string comp_point = to_string(comp_line.size());
+
+    string invoke = "COMP_LINE=" + shell_escape(comp_line) +
+                    " COMP_POINT=" + comp_point +
+                    " " + it->second + " " + shell_escape(cmd) + " " +
+                    shell_escape(string(text)) + " " + shell_escape(prev_word);
+
+    FILE* fp = popen(invoke.c_str(), "r");
+    if (fp) {
+      char buf[4096];
+      while (fgets(buf, sizeof(buf), fp)) {
+        string out(buf);
+        if (!out.empty() && out.back() == '\n') out.pop_back();
+        if (!out.empty()) completer_results.push_back(out);
+      }
+      pclose(fp);
+    }
+    if (!completer_results.empty()) {
+      rl_attempted_completion_over = 1;
+      return rl_completion_matches(text, completer_generator);
+    }
+  }
+
+  rl_attempted_completion_over = 1;
+  return rl_completion_matches(text, filename_generator);
+}
+
+void display_matches_hook(char** matches, int num_matches, int /*max_length*/) {
+  fprintf(rl_outstream, "\n");
+  for (int i = 1; i <= num_matches; i++) {
+    if (i > 1) fprintf(rl_outstream, "  ");
+    fprintf(rl_outstream, "%s", matches[i]);
+  }
+  fprintf(rl_outstream, "\n");
+  rl_on_new_line();
+  rl_redisplay();
+}
