@@ -832,7 +832,7 @@ int main() {
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
-  rl_completion_display_matches_hook = reinterpret_cast<VFunction*>(display_matches_hook);
+  rl_completion_display_matches_hook = display_matches_hook;
 
   // Set up SIGCHLD handler to mark background jobs as done asynchronously
   struct sigaction sa;
