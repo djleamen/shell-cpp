@@ -1,7 +1,19 @@
-/*
-Shell - A simple command-line shell implementation in C++
-From CodeCrafters.io build-your-own-shell (C++23)
-*/
+/**
+ * @file main.cpp
+ * @brief A POSIX-compatible interactive shell implementation built for the
+ *        CodeCrafters "Build Your Own Shell" challenge (C++23).
+ *
+ * Features:
+ *  - Built-in commands: echo, exit, type, pwd, cd, history, jobs, complete
+ *  - External command execution via execv()
+ *  - I/O redirection (>, >>, 2>, 2>>) for both stdout and stderr
+ *  - Pipeline support (cmd1 | cmd2 | ...)
+ *  - Background job execution and tracking (&)
+ *  - GNU Readline integration for line editing and tab completion
+ *  - Programmable completion via `complete -C`
+ *  - History management with HISTFILE persistence
+ *  - Single-quote, double-quote, and backslash escape handling
+ */
 
 #include <iostream>
 #include <string>
@@ -22,9 +34,28 @@ From CodeCrafters.io build-your-own-shell (C++23)
 using namespace std;
 namespace fs = std::filesystem;
 
+/**
+ * @brief Tracks the readline history index of the last entry that was
+ *        appended to the history file via `history -a`. Initialized to -1
+ *        to indicate that no append has occurred yet in the current session.
+ */
 int last_appended_index = -1;
+
+/**
+ * @brief Maps a command name to the path of its external completion script.
+ *        Populated by `complete -C <script> <cmd>` and consumed by the
+ *        readline completion machinery.
+ */
 map<string, string> completion_registry;
 
+/**
+ * @brief Represents a single background job launched with `&`.
+ *
+ * @var job_number  Shell job number shown in `[N]` brackets (1-based).
+ * @var pid         OS process ID of the background child.
+ * @var command     The raw command string as entered by the user (including `&`).
+ * @var done        Set to true when the process has exited or been signalled.
+ */
 struct BackgroundJob {
   int job_number;
   pid_t pid;
@@ -32,8 +63,17 @@ struct BackgroundJob {
   bool done = false;
 };
 
+/** @brief The live list of background jobs managed by this shell session. */
 vector<BackgroundJob> bg_jobs;
 
+/**
+ * @brief Returns the lowest positive integer not already in use as a job number.
+ *
+ * Scans @c bg_jobs linearly to find gaps so that job numbers are recycled in
+ * ascending order after completed jobs are reaped.
+ *
+ * @return The next available job number (>= 1).
+ */
 int nextJobNumber() {
   int num = 1;
   while (true) {
@@ -46,6 +86,17 @@ int nextJobNumber() {
   }
 }
 
+/**
+ * @brief SIGCHLD signal handler that non-blockingly reaps exited/signalled
+ *        background children and marks their corresponding @c BackgroundJob
+ *        entries as done.
+ *
+ * Uses @c waitpid with @c WNOHANG in a loop so that bursts of simultaneous
+ * child exits are all handled.  @c errno is saved and restored because signal
+ * handlers must not clobber it.
+ *
+ * @param[in] (unnamed)  Signal number — always SIGCHLD; not used.
+ */
 void sigchld_handler(int) {
   int saved_errno = errno;
   int wstatus;
@@ -61,6 +112,18 @@ void sigchld_handler(int) {
   errno = saved_errno;
 }
 
+/**
+ * @brief Reaps all completed background jobs, prints their completion status
+ *        to stdout, and removes them from @c bg_jobs.
+ *
+ * Called at the beginning of each REPL iteration so that the user sees
+ * completion notices before the next prompt is displayed.  The function:
+ *  1. Polls each non-done job with @c waitpid(WNOHANG).
+ *  2. Prints a line like `[1]+  Done                    sleep 5` for each
+ *     finished job, using `+` for the most-recently-added job and `-` for
+ *     the second-most-recently-added.
+ *  3. Erases done entries from @c bg_jobs (back-to-front to preserve indices).
+ */
 void reapJobs() {
   vector<int> done_indices;
   for (int i = 0; i < (int)bg_jobs.size(); i++) {
@@ -97,6 +160,11 @@ void reapJobs() {
   }
 }
 
+/**
+ * @brief Null-terminated array of built-in command names used by the
+ *        readline tab-completion generator (@c command_generator) and by
+ *        @c isBuiltin().
+ */
 const char* builtin_commands[] = {
   "echo",
   "exit",
@@ -109,6 +177,24 @@ const char* builtin_commands[] = {
   nullptr
 };
 
+/**
+ * @brief Readline completion generator that yields command names matching
+ *        a given prefix.
+ *
+ * On the first call for a new completion attempt (@p state == 0) it:
+ *  - Collects all executable files reachable via PATH whose names start with
+ *    @p text.
+ *  - Resets the static iteration state.
+ *
+ * Subsequent calls (@p state > 0) continue iterating through built-in
+ * command names first, then PATH executables, returning @c nullptr when
+ * the list is exhausted.
+ *
+ * @param[in] text   The partial command name to complete.
+ * @param[in] state  0 on the first call; non-zero on successive calls.
+ * @return  A heap-allocated copy of the next matching name, or @c nullptr
+ *          when no more matches are available.  The caller owns the memory.
+ */
 char* command_generator(const char* text, int state) {
   static int list_index;
   static size_t len;
@@ -180,6 +266,22 @@ char* command_generator(const char* text, int state) {
   return nullptr;
 }
 
+/**
+ * @brief Readline completion generator that yields filesystem entries
+ *        (files and directories) matching a given path prefix.
+ *
+ * On the first call (@p state == 0) it splits @p text into a directory part
+ * and a filename prefix, iterates the directory with
+ * @c std::filesystem::directory_iterator, and populates an internal match
+ * list.  Directory entries are returned with a trailing `/`; for those,
+ * @c rl_completion_append_character is set to `\0` so readline does not add
+ * a trailing space.
+ *
+ * @param[in] text   The partial path to complete.
+ * @param[in] state  0 on the first call; non-zero on successive calls.
+ * @return  A heap-allocated copy of the next matching path, or @c nullptr
+ *          when exhausted.  The caller owns the memory.
+ */
 char* filename_generator(const char* text, int state) {
   static vector<string> matches;
   static size_t match_index;
@@ -235,8 +337,23 @@ char* filename_generator(const char* text, int state) {
   return nullptr;
 }
 
+/**
+ * @brief Staging buffer populated by @c command_completion when a
+ *        programmable completer script produces candidates.  The generator
+ *        @c completer_generator drains this vector one entry per call.
+ */
 vector<string> completer_results;
 
+/**
+ * @brief Readline completion generator that iterates over
+ *        @c completer_results, which were filled by an external completion
+ *        script invoked from @c command_completion.
+ *
+ * @param[in] text   Ignored; matching was already done by the external script.
+ * @param[in] state  0 on the first call; non-zero on successive calls.
+ * @return  A heap-allocated copy of the next candidate, or @c nullptr when
+ *          exhausted.  The caller owns the memory.
+ */
 char* completer_generator(const char* text, int state) {
   static size_t idx;
   if (!state) {
@@ -250,6 +367,27 @@ char* completer_generator(const char* text, int state) {
   return nullptr;
 }
 
+/**
+ * @brief Custom readline completion function registered via
+ *        @c rl_attempted_completion_function.
+ *
+ * Dispatch logic:
+ *  1. If the cursor is at the start of the line (@p start == 0), delegate to
+ *     @c command_generator for command-name completion.
+ *  2. If the command at the beginning of the line has an entry in
+ *     @c completion_registry, invoke the registered external script with
+ *     @c COMP_LINE and @c COMP_POINT set, parse its output into
+ *     @c completer_results, and delegate to @c completer_generator.
+ *  3. Otherwise fall back to filename completion via @c filename_generator.
+ *
+ * @param[in] text   The word under the cursor being completed.
+ * @param[in] start  Byte offset of @p text in the readline input buffer.
+ * @param[in] end    Byte offset of the end of @p text (unused).
+ * @return  Array of heap-allocated completion strings as expected by readline,
+ *          or @c nullptr to let readline perform its default filename
+ *          completion (not reached because we always set
+ *          @c rl_attempted_completion_over).
+ */
 char** command_completion(const char* text, int start, int end) {
   // Complete commands at the beginning of the line
   if (start == 0) {
@@ -328,6 +466,18 @@ char** command_completion(const char* text, int start, int end) {
   return rl_completion_matches(text, filename_generator);
 }
 
+/**
+ * @brief Parsed representation of a single command within a pipeline.
+ *
+ * @var args              Tokenized command name and arguments (quoting and
+ *                         escaping already resolved).
+ * @var output_file       Target path for stdout redirection; empty if none.
+ * @var has_redirect      True when a `>` or `>>` operator was present.
+ * @var is_append         True when `>>` (append) was used instead of `>`.
+ * @var error_file        Target path for stderr redirection; empty if none.
+ * @var has_error_redirect True when a `2>` or `2>>` operator was present.
+ * @var is_error_append   True when `2>>` (append) was used instead of `2>`.
+ */
 struct CommandInfo {
   vector<string> args;
   string output_file;
@@ -338,12 +488,39 @@ struct CommandInfo {
   bool is_error_append;
 };
 
+/**
+ * @brief Parsed representation of a complete input line, potentially
+ *        containing multiple commands connected by `|`.
+ *
+ * @var commands   Ordered list of @c CommandInfo objects, one per
+ *                 pipe-separated segment.
+ * @var has_pipe   True when at least one `|` operator separated the commands.
+ */
 struct PipelineInfo {
   vector<CommandInfo> commands;
   bool has_pipe;
 };
 
-// Parse command
+/**
+ * @brief Parses a raw command string into a @c PipelineInfo structure.
+ *
+ * The function performs two passes:
+ *  1. **Pipe splitting**: splits on unquoted `|` characters to produce
+ *     individual command strings, respecting single-quote, double-quote, and
+ *     backslash escaping so that `echo "a|b"` is not split.
+ *  2. **Token parsing**: for each command string, tokenizes into arguments
+ *     while applying the full POSIX quoting rules:
+ *       - Outside quotes: `\` escapes the next character literally.
+ *       - Inside double quotes: only `\"` and `\\` are escape sequences;
+ *         other `\X` sequences are kept verbatim.
+ *       - Inside single quotes: all characters are literal.
+ *     Redirection operators (`>`, `>>`, `1>`, `1>>`, `2>`, `2>>`) and their
+ *     target filenames are extracted into the corresponding @c CommandInfo
+ *     fields and removed from the argument list.
+ *
+ * @param[in] command  The raw command line as entered by the user.
+ * @return A fully populated @c PipelineInfo ready for execution.
+ */
 PipelineInfo parsePipeline(const string& command) {
   PipelineInfo pipeline;
   pipeline.has_pipe = false;
@@ -487,11 +664,34 @@ PipelineInfo parsePipeline(const string& command) {
 
 string findInPath(const string& program);
 
+/**
+ * @brief Returns true when @p cmd is one of the shell's built-in commands.
+ *
+ * Built-ins are handled directly by the shell process rather than by forking
+ * a child, which allows them to affect the shell's own state (e.g., `cd`
+ * changes the working directory, `exit` terminates the shell).
+ *
+ * @param[in] cmd  Command name to test.
+ * @return @c true if @p cmd is a built-in; @c false otherwise.
+ */
 bool isBuiltin(const string& cmd) {
   return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd" || cmd == "cd" || cmd == "history" || cmd == "jobs" || cmd == "complete";
 }
 
-// Execute built-in command (for use in child process during pipeline)
+/**
+ * @brief Executes a built-in command inside a forked child process.
+ *
+ * Used exclusively by @c executePipeline so that built-ins can participate
+ * in a pipeline (their output goes through the pipe) while the parent shell
+ * process remains unaffected.  The function always terminates the child via
+ * @c exit() after the command runs.
+ *
+ * Built-ins handled: `exit`, `echo`, `type`, `pwd`, `cd`, `jobs`, `history`.
+ * The `complete` built-in is not meaningful inside a pipeline and exits
+ * silently.
+ *
+ * @param[in] args  Tokenized arguments where @c args[0] is the command name.
+ */
 void executeBuiltinInChild(const vector<string>& args) {
   string program = args[0];
   
@@ -620,7 +820,18 @@ void executeBuiltinInChild(const vector<string>& args) {
   exit(0);
 }
 
-// Find executable in PATH
+/**
+ * @brief Searches the directories listed in the PATH environment variable
+ *        for an executable named @p program.
+ *
+ * Each colon-separated directory is tried in order.  A candidate is accepted
+ * when:
+ *  - The file exists.
+ *  - The owner-execute permission bit is set.
+ *
+ * @param[in] program  The bare executable name to look up (no path separators).
+ * @return The absolute path to the first match, or an empty string if not found.
+ */
 string findInPath(const string& program) {
   string path_str;
   const char* path_env = getenv("PATH");
@@ -641,7 +852,24 @@ string findInPath(const string& program) {
   return "";
 }
 
-// Execute external program
+/**
+ * @brief Forks a child process and runs an external program via @c execv().
+ *
+ * If @p output_file is non-empty the child redirects its stdout to that file
+ * (truncating or appending according to @p is_append).  Similarly for
+ * @p error_file / @p is_error_append on stderr.
+ *
+ * The parent blocks in @c waitpid until the child exits, making this a
+ * synchronous (foreground) execution helper.  For background execution see
+ * the `&` handling in @c main().
+ *
+ * @param[in] path             Absolute path to the executable.
+ * @param[in] args             Argument vector; @c args[0] should be the program name.
+ * @param[in] output_file      Path to redirect stdout; empty string disables redirection.
+ * @param[in] is_append        When true, stdout is opened in append mode (`>>`).
+ * @param[in] error_file       Path to redirect stderr; empty string disables redirection.
+ * @param[in] is_error_append  When true, stderr is opened in append mode (`2>>`).
+ */
 void executeProgram(const string& path, const vector<string>& args, const string& output_file = "", bool is_append = false, const string& error_file = "", bool is_error_append = false) {
   pid_t pid = fork();
   
@@ -692,7 +920,26 @@ void executeProgram(const string& path, const vector<string>& args, const string
   }
 }
 
-// Execute pipeline
+/**
+ * @brief Executes a sequence of commands connected by pipes.
+ *
+ * For N commands, N-1 anonymous pipes are created.  Each command is run in
+ * its own forked child:
+ *  - The first child's stdin is inherited from the shell.
+ *  - Each intermediate child reads from the previous pipe and writes to the
+ *    next.
+ *  - The last child writes to either the next pipe's write end or, if an
+ *    output redirection was specified on the last command, to the redirect
+ *    file.
+ *  - All pipe file descriptors are closed in both parent and children after
+ *    they have been @c dup2()'d where needed.
+ *
+ * Built-in commands are handled inside children via @c executeBuiltinInChild().
+ * External commands are launched with @c execv().
+ * The parent waits for all children before returning.
+ *
+ * @param[in] commands  Ordered list of @c CommandInfo objects forming the pipeline.
+ */
 void executePipeline(const vector<CommandInfo>& commands) {
   if (commands.empty()) return;
   
@@ -815,6 +1062,20 @@ void executePipeline(const vector<CommandInfo>& commands) {
   }
 }
 
+/**
+ * @brief Readline hook that formats and prints tab-completion candidates.
+ *
+ * Registered as @c rl_completion_display_matches_hook so that matches are
+ * displayed on a single line separated by two spaces, without the default
+ * column-aligned pager layout.  After printing, the current prompt and
+ * partial input are redrawn via @c rl_on_new_line() / @c rl_redisplay().
+ *
+ * @param[in] matches      Null-terminated array of match strings; index 0 is
+ *                          the longest common prefix (not printed), index 1..N
+ *                          are the individual candidates.
+ * @param[in] num_matches  Number of candidates (excluding the common prefix).
+ * @param[in] (max_length) Maximum candidate string length (unused).
+ */
 static void display_matches_hook(char **matches, int num_matches, int /*max_length*/) {
   fprintf(rl_outstream, "\n");
   for (int i = 1; i <= num_matches; i++) {
@@ -826,6 +1087,33 @@ static void display_matches_hook(char **matches, int num_matches, int /*max_leng
   rl_redisplay();
 }
 
+/**
+ * @brief Shell entry point implementing the Read-Eval-Print Loop (REPL).
+ *
+ * Startup sequence:
+ *  1. Enables immediate flushing of @c cout and @c cerr.
+ *  2. Registers @c command_completion and @c display_matches_hook with readline.
+ *  3. Installs @c sigchld_handler for asynchronous background-job reaping.
+ *  4. Loads command history from @c HISTFILE (if set).
+ *
+ * REPL loop:
+ *  1. **Reap** — notify the user of any completed background jobs.
+ *  2. **Read** — display the `$ ` prompt and read a line via readline;
+ *     exit on EOF (@c Ctrl-D).
+ *  3. **Eval** — parse the line with @c parsePipeline() and dispatch:
+ *       - Empty input: skip.
+ *       - Pipeline (`|`): call @c executePipeline().
+ *       - Background job (`&`): fork without waiting, register in @c bg_jobs.
+ *       - Built-in commands: handle inline with I/O redirection scaffolding.
+ *       - External commands: call @c executeProgram().
+ *  4. **Restore** — undo any stdout/stderr redirection done for built-ins.
+ *  5. Loop to step 1.
+ *
+ * Shutdown:
+ *  - Writes the full readline history to @c HISTFILE (if set).
+ *
+ * @return 0 on normal exit.
+ */
 int main() {
   // Flush after every std::cout / std:cerr
   cout << unitbuf;
