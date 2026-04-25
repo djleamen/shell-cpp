@@ -1124,6 +1124,9 @@ int main() {
       if (args.size() > 3 && args[1] == "-C") {
         // complete -C <path> <command>
         completion_registry[args[3]] = args[2];
+      } else if (args.size() > 2 && args[1] == "-r") {
+        // complete -r <command> — remove completion rule (silently if not found)
+        completion_registry.erase(args[2]);
       } else if (args.size() > 2 && args[1] == "-p") {
         string cmd = args[2];
         auto it = completion_registry.find(cmd);
