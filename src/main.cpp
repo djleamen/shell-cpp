@@ -201,11 +201,11 @@ char* command_generator(const char* text, int state) {
   static string search_text;  // Store as string for safety
   static vector<string> path_executables;
   static size_t path_exec_index;
-  static bool builtins_done;  // Track when we've finished checking builtins
+  static bool builtins_done;
   
   if (!state) {
     list_index = 0;
-    search_text = text ? text : "";  // Safely handle null and convert to string
+    search_text = text ? text : "";
     len = search_text.length();
     path_executables.clear();
     path_exec_index = 0;
@@ -226,7 +226,6 @@ char* command_generator(const char* text, int state) {
             if (entry.is_regular_file()) {
               string filename = entry.path().filename().string();
               if (filename.length() >= len && filename.substr(0, len) == search_text) {
-                // Check if executable
                 auto perms = entry.status().permissions();
                 if ((perms & fs::perms::owner_exec) != fs::perms::none ||
                     (perms & fs::perms::group_exec) != fs::perms::none ||
@@ -246,7 +245,6 @@ char* command_generator(const char* text, int state) {
     }
   }
   
-  // Return builtin commands
   if (!builtins_done) {
     while (builtin_commands[list_index]) {
       const char* name = builtin_commands[list_index++];
@@ -258,7 +256,6 @@ char* command_generator(const char* text, int state) {
     builtins_done = true;
   }
   
-  // Return PATH executables
   if (path_exec_index < path_executables.size()) {
     return strdup(path_executables[path_exec_index++].c_str());
   }
@@ -292,7 +289,6 @@ char* filename_generator(const char* text, int state) {
 
     string input(text ? text : "");
 
-    // Split into directory and file prefix at last '/'
     string dir_path;
     string file_prefix;
     size_t last_slash = input.rfind('/');
@@ -325,7 +321,6 @@ char* filename_generator(const char* text, int state) {
 
   if (match_index < matches.size()) {
     string match = matches[match_index++];
-    // Suppress trailing space for directories (they end with '/')
     if (!match.empty() && match.back() == '/') {
       rl_completion_append_character = '\0';
     } else {
@@ -389,12 +384,10 @@ char* completer_generator(const char* text, int state) {
  *          @c rl_attempted_completion_over).
  */
 char** command_completion(const char* text, int start, int end) {
-  // Complete commands at the beginning of the line
   if (start == 0) {
     return rl_completion_matches(text, command_generator);
   }
 
-  // Check for a registered completer for the command on this line
   string line(rl_line_buffer ? rl_line_buffer : "");
   string cmd;
   {
@@ -409,22 +402,17 @@ char** command_completion(const char* text, int start, int end) {
     string before_cursor = line.substr(0, start);
     string prev_word;
     {
-      // Tokenize before_cursor by whitespace to find the last token
       vector<string> tokens;
       istringstream iss(before_cursor);
       string tok;
       while (iss >> tok) tokens.push_back(tok);
       if (!before_cursor.empty() && !isspace((unsigned char)before_cursor.back())) {
-        // last token is the current partial word, prev is second-to-last
         if (tokens.size() >= 2) prev_word = tokens[tokens.size() - 2];
       } else {
         if (tokens.size() >= 1) prev_word = tokens.back();
       }
     }
 
-    // Build the command string with shell-escaped arguments:
-    // completer_script <cmd> <current_word> <prev_word>
-    // Also set COMP_LINE and COMP_POINT as environment variables.
     auto shell_escape = [](const string& s) -> string {
       string out = "'";
       for (char c : s) {
@@ -461,7 +449,6 @@ char** command_completion(const char* text, int start, int end) {
     }
   }
 
-  // Fall back to filename completion
   rl_attempted_completion_over = 1;
   return rl_completion_matches(text, filename_generator);
 }
@@ -575,7 +562,6 @@ PipelineInfo parsePipeline(const string& command) {
     for (size_t i = 0; i < cmd_str.length(); ++i) {
       char c = cmd_str[i];
       
-      // Handle backslash escaping outside quotes
       if (c == '\\' && !in_single_quotes && !in_double_quotes) {
         if (i + 1 < cmd_str.length()) {
           ++i;
@@ -585,7 +571,6 @@ PipelineInfo parsePipeline(const string& command) {
           current_arg += c;
         }
       }
-      // Handle backslash escaping inside double quotes
       else if (c == '\\' && in_double_quotes && !in_single_quotes) {
         if (i + 1 < cmd_str.length()) {
           char next = cmd_str[i + 1];
@@ -600,10 +585,8 @@ PipelineInfo parsePipeline(const string& command) {
         }
       }
       else if (c == '\'' && !in_double_quotes) {
-        // Single quote toggles (only if not in double quotes)
         in_single_quotes = !in_single_quotes;
       } else if (c == '"' && !in_single_quotes) {
-        // Double quote toggles (only if not in single quotes)
         in_double_quotes = !in_double_quotes;
       } else if (isspace(c) && !in_single_quotes && !in_double_quotes) {
         if (!current_arg.empty()) {
@@ -618,7 +601,6 @@ PipelineInfo parsePipeline(const string& command) {
       args.push_back(current_arg);
     }
     
-    // Check for output redirection (>>, 1>>, >, or 1>) and error redirection (2>)
     for (size_t i = 0; i < args.size(); ++i) {
       if (args[i] == ">>" || args[i] == "1>>") {
         info.has_redirect = true;
@@ -751,7 +733,6 @@ void executeBuiltinInChild(const vector<string>& args) {
   }
   else if (program == "history") {
     if (args.size() > 2 && args[1] == "-r") {
-      // history -r <file> - read history from file
       string filename = args[2];
       ifstream file(filename);
       if (file.is_open()) {
@@ -766,7 +747,6 @@ void executeBuiltinInChild(const vector<string>& args) {
         cerr << "history: " << filename << ": No such file or directory" << endl;
       }
     } else if (args.size() > 2 && args[1] == "-w") {
-      // history -w <file> - write history to file
       string filename = args[2];
       ofstream file(filename);
       if (file.is_open()) {
@@ -783,7 +763,6 @@ void executeBuiltinInChild(const vector<string>& args) {
         cerr << "history: " << filename << ": cannot create" << endl;
       }
     } else if (args.size() > 2 && args[1] == "-a") {
-      // history -a <file> - append new commands to file
       string filename = args[2];
       ofstream file(filename, ios::app);
       if (file.is_open()) {
@@ -946,9 +925,6 @@ void executePipeline(const vector<CommandInfo>& commands) {
   int num_commands = commands.size();
   vector<pid_t> pids;
   
-  // Create pipes: we need (num_commands - 1) pipes
-  
-  // Each pipe is an array of 2 ints: [read_fd, write_fd]
   vector<vector<int>> pipes(num_commands - 1, vector<int>(2));
   for (int i = 0; i < num_commands - 1; ++i) {
     if (pipe(pipes[i].data()) == -1) {
@@ -957,15 +933,12 @@ void executePipeline(const vector<CommandInfo>& commands) {
     }
   }
   
-  // Execute each command in the pipeline
   for (int i = 0; i < num_commands; ++i) {
     const CommandInfo& cmd = commands[i];
     
-    // Check if command is a built-in
     bool is_builtin = isBuiltin(cmd.args[0]);
     string path;
     
-    // Find executable path for external commands
     if (!is_builtin) {
       path = findInPath(cmd.args[0]);
       if (path.empty()) {
@@ -981,23 +954,19 @@ void executePipeline(const vector<CommandInfo>& commands) {
     pid_t pid = fork();
     
     if (pid == 0) {      
-      // Set up stdin: read from previous pipe (except for first command)
       if (i > 0) {
         dup2(pipes[i - 1][0], STDIN_FILENO);
       }
       
-      // Set up stdout: write to next pipe (except for last command)
       if (i < num_commands - 1) {
         dup2(pipes[i][1], STDOUT_FILENO);
       }
       
-      // Close all pipe fds in child
       for (int j = 0; j < num_commands - 1; ++j) {
         close(pipes[j][0]);
         close(pipes[j][1]);
       }
       
-      // Handle output redirection for last command
       if (i == num_commands - 1 && cmd.has_redirect && !cmd.output_file.empty()) {
         int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
         int fd = open(cmd.output_file.c_str(), flags, 0644);
@@ -1009,7 +978,6 @@ void executePipeline(const vector<CommandInfo>& commands) {
         close(fd);
       }
       
-      // Handle error redirection
       if (cmd.has_error_redirect && !cmd.error_file.empty()) {
         int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
         int fd = open(cmd.error_file.c_str(), flags, 0644);
@@ -1021,7 +989,6 @@ void executePipeline(const vector<CommandInfo>& commands) {
         close(fd);
       }
       
-      // Execute command (built-in or external)
       if (is_builtin) {
         executeBuiltinInChild(cmd.args);
       } else {
@@ -1049,13 +1016,11 @@ void executePipeline(const vector<CommandInfo>& commands) {
     }
   }
   
-  // Close all pipes in parent
   for (int i = 0; i < num_commands - 1; ++i) {
     close(pipes[i][0]);
     close(pipes[i][1]);
   }
   
-  // Wait for all child processes
   for (pid_t pid : pids) {
     int status;
     waitpid(pid, &status, 0);
@@ -1115,21 +1080,18 @@ static void display_matches_hook(char **matches, int num_matches, int /*max_leng
  * @return 0 on normal exit.
  */
 int main() {
-  // Flush after every std::cout / std:cerr
   cout << unitbuf;
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
   rl_completion_display_matches_hook = display_matches_hook;
 
-  // Set up SIGCHLD handler to mark background jobs as done asynchronously
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
   sigaction(SIGCHLD, &sa, nullptr);
 
-  // HISTFILE - safely get and store environment variable
   string histfile;
   const char* histfile_env = getenv("HISTFILE");
   if (histfile_env) {
@@ -1149,12 +1111,10 @@ int main() {
     }
   }
 
-  // Read: Display a prompt and wait for user input
   while (true) {
     reapJobs();
     char* input = readline("$ ");
     
-    // Check for EOF (Ctrl+D)
     if (!input) {
       break;
     }
@@ -1162,12 +1122,10 @@ int main() {
     string command(input);
     free(input);
     
-    // Add non-empty commands to history
     if (!command.empty()) {
       add_history(command.c_str());
     }
 
-    // Eval: Parse and execute the command
     PipelineInfo pipeline = parsePipeline(command);
     
     if (pipeline.commands.empty() || 
@@ -1180,11 +1138,9 @@ int main() {
       continue;
     }
     
-    // Handle single command
     CommandInfo cmd_info = pipeline.commands[0];
     vector<string>& args = cmd_info.args;
     
-    // Check for background execution (&)
     bool run_in_bg = false;
     if (!args.empty() && args.back() == "&") {
       run_in_bg = true;
@@ -1194,7 +1150,6 @@ int main() {
     
     string program = args[0];
     
-    // Handle background execution for external commands
     if (run_in_bg) {
       string path = findInPath(program);
       if (!path.empty()) {
@@ -1249,11 +1204,9 @@ int main() {
       }
     }
 
-    // exit
     if (program == "exit") {
       break;
     }
-    // echo
     else if (program == "echo") {
       for (size_t i = 1; i < args.size(); ++i) {
         if (i > 1) cout << " ";
@@ -1261,7 +1214,6 @@ int main() {
       }
       cout << endl;
     }
-    // type
     else if (program == "type" && args.size() > 1) {
       string arg = args[1];
       if (isBuiltin(arg)) {
@@ -1275,7 +1227,6 @@ int main() {
         }
       }
     }
-    // pwd
     else if (program == "pwd") {
       char cwd[1024];
       if (getcwd(cwd, sizeof(cwd)) != nullptr) {
@@ -1284,10 +1235,8 @@ int main() {
         cerr << "pwd: error getting current directory" << endl;
       }
     }
-    // history
     else if (program == "history") {
       if (args.size() > 2 && args[1] == "-r") {
-        // history -r <file>
         string filename = args[2];
         ifstream file(filename);
         if (file.is_open()) {
@@ -1302,7 +1251,6 @@ int main() {
           cerr << "history: " << filename << ": No such file or directory" << endl;
         }
       } else if (args.size() > 2 && args[1] == "-a") {
-        // history -a <file>
         string filename = args[2];
         ofstream file(filename, ios::app);
         if (file.is_open()) {
@@ -1320,7 +1268,6 @@ int main() {
           cerr << "history: " << filename << ": cannot create" << endl;
         }
       } else if (args.size() > 2 && args[1] == "-w") {
-        // history -w <file>
         string filename = args[2];
         ofstream file(filename);
         if (file.is_open()) {
@@ -1353,7 +1300,6 @@ int main() {
         }
       }
     }
-    // jobs
     else if (program == "jobs") {
       // Drain all exited children first
       {
@@ -1402,18 +1348,14 @@ int main() {
         }
         cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
       }
-      // Remove done jobs from the list
       for (int i = done_indices.size() - 1; i >= 0; i--) {
         bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
       }
     }
-    // complete
     else if (program == "complete") {
       if (args.size() > 3 && args[1] == "-C") {
-        // complete -C <path> <command>
         completion_registry[args[3]] = args[2];
       } else if (args.size() > 2 && args[1] == "-r") {
-        // complete -r <command> — remove completion rule (silently if not found)
         completion_registry.erase(args[2]);
       } else if (args.size() > 2 && args[1] == "-p") {
         string cmd = args[2];
@@ -1425,7 +1367,6 @@ int main() {
         }
       }
     }
-    // cd
     else if (program == "cd" && args.size() > 1) {
       string path = args[1];
       
@@ -1447,7 +1388,6 @@ int main() {
         cout << "cd: " << path << ": No such file or directory" << endl;
       }
     }
-    // Try to execute as external program
     else {
       // Restore stdout and stderr before forking for external programs
       if (saved_stdout != -1) {
@@ -1489,10 +1429,8 @@ int main() {
       if (error_redirect_fd != -1) close(error_redirect_fd);
     }
 
-    // Loop: Return to step 1 and wait for the next command
   }
   
-  // Write history to HISTFILE on exit
   if (!histfile.empty()) {
     ofstream file(histfile);
     if (file.is_open()) {
