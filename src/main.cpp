@@ -282,8 +282,6 @@ char** command_completion(const char* text, int start, int end) {
       } else {
         if (tokens.size() >= 1) prev_word = tokens.back();
       }
-      // If prev_word is the command itself, it means no real "prev" word (e.g. "git <TAB>")
-      if (prev_word == cmd) prev_word = "";
     }
 
     // Build the command string with shell-escaped arguments:
@@ -817,12 +815,24 @@ void executePipeline(const vector<CommandInfo>& commands) {
   }
 }
 
+static void display_matches_hook(char **matches, int num_matches, int /*max_length*/) {
+  fprintf(rl_outstream, "\n");
+  for (int i = 1; i <= num_matches; i++) {
+    if (i > 1) fprintf(rl_outstream, "  ");
+    fprintf(rl_outstream, "%s", matches[i]);
+  }
+  fprintf(rl_outstream, "\n");
+  rl_on_new_line();
+  rl_redisplay();
+}
+
 int main() {
   // Flush after every std::cout / std:cerr
   cout << unitbuf;
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
+  rl_completion_display_matches_hook = reinterpret_cast<VFunction*>(display_matches_hook);
 
   // Set up SIGCHLD handler to mark background jobs as done asynchronously
   struct sigaction sa;
