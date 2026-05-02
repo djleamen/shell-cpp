@@ -19,5 +19,6 @@ const char* builtin_commands[] = {
   "history",
   "jobs",
   "complete",
+  "declare",
   nullptr
 };

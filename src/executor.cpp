@@ -21,7 +21,8 @@ namespace fs = std::filesystem;
 
 bool isBuiltin(const string& cmd) {
   return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd"
-      || cmd == "cd"   || cmd == "history" || cmd == "jobs" || cmd == "complete";
+      || cmd == "cd"   || cmd == "history" || cmd == "jobs" || cmd == "complete"
+      || cmd == "declare";
 }
 
 string findInPath(const string& program) {
