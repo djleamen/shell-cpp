@@ -358,8 +358,17 @@ int main() {
         size_t eq = assignment.find('=');
         if (eq != string::npos) {
           string varname = assignment.substr(0, eq);
-          string value = assignment.substr(eq + 1);
-          shell_variables[varname] = value;
+          // Validate identifier: must start with letter or '_', rest alphanumeric or '_'
+          bool valid = !varname.empty() && (isalpha(varname[0]) || varname[0] == '_');
+          for (size_t i = 1; valid && i < varname.size(); ++i) {
+            if (!isalnum(varname[i]) && varname[i] != '_') valid = false;
+          }
+          if (!valid) {
+            cerr << "declare: `" << assignment << "': not a valid identifier" << endl;
+          } else {
+            string value = assignment.substr(eq + 1);
+            shell_variables[varname] = value;
+          }
         }
       }
     }
