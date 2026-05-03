@@ -156,47 +156,58 @@ char* completer_generator(const char* /*text*/, int state) {
   return nullptr;
 }
 
+static string shell_escape(const string& s) {
+  string out = "'";
+  for (char c : s) {
+    if (c == '\'') out += "'\\''";
+    else           out += c;
+  }
+  out += "'";
+  return out;
+}
+
+static string extractPrevWord(const string& before_cursor) {
+  vector<string> tokens;
+  istringstream iss(before_cursor);
+  string tok;
+  while (iss >> tok) tokens.push_back(tok);
+  if (!before_cursor.empty() && !isspace((unsigned char)before_cursor.back())) {
+    if (tokens.size() >= 2) return tokens[tokens.size() - 2];
+  } else {
+    if (!tokens.empty()) return tokens.back();
+  }
+  return {};
+}
+
+static void runCompletionScript(const string& invoke) {
+  FILE* fp = popen(invoke.c_str(), "r");
+  if (!fp) return;
+  char buf[4096];
+  while (fgets(buf, sizeof(buf), fp)) {
+    string out(buf);
+    if (!out.empty() && out.back() == '\n') out.pop_back();
+    if (!out.empty()) getCompleterResults().push_back(out);
+  }
+  pclose(fp);
+}
+
 char** command_completion(const char* text, int start, int /*end*/) {
   if (start == 0) {
     return rl_completion_matches(text, command_generator);
   }
 
   string line(rl_line_buffer ? rl_line_buffer : "");
-  string cmd;
-  {
-    size_t sp = line.find(' ');
-    cmd = (sp != string::npos) ? line.substr(0, sp) : line;
-  }
+  size_t sp = line.find(' ');
+  string cmd = (sp != string::npos) ? line.substr(0, sp) : line;
 
   auto it = completion_registry.find(cmd);
   if (it != completion_registry.end()) {
     getCompleterResults().clear();
 
     string before_cursor = line.substr(0, start);
-    string prev_word;
-    {
-      vector<string> tokens;
-      istringstream iss(before_cursor);
-      string tok;
-      while (iss >> tok) tokens.push_back(tok);
-      if (!before_cursor.empty() && !isspace((unsigned char)before_cursor.back())) {
-        if (tokens.size() >= 2) prev_word = tokens[tokens.size() - 2];
-      } else {
-        if (tokens.size() >= 1) prev_word = tokens.back();
-      }
-    }
+    string prev_word     = extractPrevWord(before_cursor);
 
-    auto shell_escape = [](const string& s) -> string {
-      string out = "'";
-      for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-      }
-      out += "'";
-      return out;
-    };
-
-    string comp_line = line.substr(0, start) + string(text);
+    string comp_line  = before_cursor + string(text);
     string comp_point = to_string(comp_line.size());
 
     string invoke = "COMP_LINE=" + shell_escape(comp_line) +
@@ -204,16 +215,8 @@ char** command_completion(const char* text, int start, int /*end*/) {
                     " " + it->second + " " + shell_escape(cmd) + " " +
                     shell_escape(string(text)) + " " + shell_escape(prev_word);
 
-    FILE* fp = popen(invoke.c_str(), "r");
-    if (fp) {
-      char buf[4096];
-      while (fgets(buf, sizeof(buf), fp)) {
-        string out(buf);
-        if (!out.empty() && out.back() == '\n') out.pop_back();
-        if (!out.empty()) getCompleterResults().push_back(out);
-      }
-      pclose(fp);
-    }
+    runCompletionScript(invoke);
+
     if (!getCompleterResults().empty()) {
       rl_attempted_completion_over = 1;
       return rl_completion_matches(text, completer_generator);
