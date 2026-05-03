@@ -168,6 +168,13 @@ int main() {
       }
       arg = expanded;
     }
+    // Drop arguments that expanded to empty (unset variable with no surrounding text)
+    if (args.size() > 1) {
+      args.erase(
+        std::remove_if(args.begin() + 1, args.end(), [](const string& s) { return s.empty(); }),
+        args.end()
+      );
+    }
     program = args[0];
 
     if (run_in_bg) {
