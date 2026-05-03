@@ -165,7 +165,7 @@ int main() {
     if (cmd_info.has_redirect && !cmd_info.output_file.empty()) {
       saved_stdout = dup(STDOUT_FILENO);
       int flags = O_WRONLY | O_CREAT | (cmd_info.is_append ? O_APPEND : O_TRUNC);
-      redirect_fd = open(cmd_info.output_file.c_str(), flags, 0644);
+      redirect_fd = open(cmd_info.output_file.c_str(), flags, 0666);
       if (redirect_fd != -1) {
         dup2(redirect_fd, STDOUT_FILENO);
       }
@@ -174,7 +174,7 @@ int main() {
     if (cmd_info.has_error_redirect && !cmd_info.error_file.empty()) {
       saved_stderr = dup(STDERR_FILENO);
       int flags = O_WRONLY | O_CREAT | (cmd_info.is_error_append ? O_APPEND : O_TRUNC);
-      error_redirect_fd = open(cmd_info.error_file.c_str(), flags, 0644);
+      error_redirect_fd = open(cmd_info.error_file.c_str(), flags, 0666);
       if (error_redirect_fd != -1) {
         dup2(error_redirect_fd, STDERR_FILENO);
       }
@@ -339,6 +339,12 @@ int main() {
         } else {
           cerr << "complete: " << cmd << ": no completion specification" << endl;
         }
+      }
+    }
+    else if (program == "declare") {
+      if (args.size() > 2 && args[1] == "-p") {
+        string varname = args[2];
+        cerr << "declare: " << varname << ": not found" << endl;
       }
     }
     else if (program == "cd" && args.size() > 1) {

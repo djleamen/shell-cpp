@@ -155,14 +155,14 @@ void executeProgram(const string& path, const vector<string>& args,
   if (pid == 0) {
     if (!output_file.empty()) {
       int flags = O_WRONLY | O_CREAT | (is_append ? O_APPEND : O_TRUNC);
-      int fd = open(output_file.c_str(), flags, 0644);
+      int fd = open(output_file.c_str(), flags, 0666);
       if (fd == -1) { cerr << "Failed to open " << output_file << " for writing" << endl; exit(1); }
       dup2(fd, STDOUT_FILENO);
       close(fd);
     }
     if (!error_file.empty()) {
       int flags = O_WRONLY | O_CREAT | (is_error_append ? O_APPEND : O_TRUNC);
-      int fd = open(error_file.c_str(), flags, 0644);
+      int fd = open(error_file.c_str(), flags, 0666);
       if (fd == -1) { cerr << "Failed to open " << error_file << " for writing" << endl; exit(1); }
       dup2(fd, STDERR_FILENO);
       close(fd);
@@ -230,7 +230,7 @@ void executePipeline(const vector<CommandInfo>& commands) {
 
       if (i == num_commands - 1 && cmd.has_redirect && !cmd.output_file.empty()) {
         int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
-        int fd = open(cmd.output_file.c_str(), flags, 0644);
+        int fd = open(cmd.output_file.c_str(), flags, 0666);
         if (fd == -1) { cerr << "Failed to open " << cmd.output_file << " for writing" << endl; exit(1); }
         dup2(fd, STDOUT_FILENO);
         close(fd);
@@ -238,7 +238,7 @@ void executePipeline(const vector<CommandInfo>& commands) {
 
       if (cmd.has_error_redirect && !cmd.error_file.empty()) {
         int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
-        int fd = open(cmd.error_file.c_str(), flags, 0644);
+        int fd = open(cmd.error_file.c_str(), flags, 0666);
         if (fd == -1) { cerr << "Failed to open " << cmd.error_file << " for writing" << endl; exit(1); }
         dup2(fd, STDERR_FILENO);
         close(fd);
