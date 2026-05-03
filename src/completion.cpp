@@ -20,6 +20,38 @@ vector<string>& getCompleterResults() {
   return results;
 }
 
+static bool isExecutable(const fs::directory_entry& entry) {
+  auto perms = entry.status().permissions();
+  return (perms & fs::perms::owner_exec) != fs::perms::none ||
+         (perms & fs::perms::group_exec) != fs::perms::none ||
+         (perms & fs::perms::others_exec) != fs::perms::none;
+}
+
+static vector<string> collectPathExecutables(const string& prefix) {
+  vector<string> results;
+  const char* path_env = getenv("PATH");
+  if (!path_env) return results;
+
+  const size_t len = prefix.length();
+  stringstream ss(path_env);
+  string dir;
+  while (getline(ss, dir, ':')) {
+    if (!fs::exists(dir)) continue;
+    try {
+      for (const auto& entry : fs::directory_iterator(dir)) {
+        if (!entry.is_regular_file()) continue;
+        string filename = entry.path().filename().string();
+        if (filename.length() < len || filename.substr(0, len) != prefix) continue;
+        if (!isExecutable(entry)) continue;
+        if (find(results.begin(), results.end(), filename) == results.end()) {
+          results.push_back(filename);
+        }
+      }
+    } catch (...) {}
+  }
+  return results;
+}
+
 char* command_generator(const char* text, int state) {
   static int list_index;
   static size_t len;
@@ -29,38 +61,12 @@ char* command_generator(const char* text, int state) {
   static bool builtins_done;
 
   if (!state) {
-    list_index = 0;
     search_text = text ? text : "";
     len = search_text.length();
-    path_executables.clear();
+    list_index = 0;
     path_exec_index = 0;
     builtins_done = false;
-
-    const char* path_env = getenv("PATH");
-    if (path_env) {
-      stringstream ss(path_env);
-      string dir;
-      while (getline(ss, dir, ':')) {
-        if (!fs::exists(dir)) continue;
-        try {
-          for (const auto& entry : fs::directory_iterator(dir)) {
-            if (entry.is_regular_file()) {
-              string filename = entry.path().filename().string();
-              if (filename.length() >= len && filename.substr(0, len) == search_text) {
-                auto perms = entry.status().permissions();
-                if ((perms & fs::perms::owner_exec) != fs::perms::none ||
-                    (perms & fs::perms::group_exec) != fs::perms::none ||
-                    (perms & fs::perms::others_exec) != fs::perms::none) {
-                  if (find(path_executables.begin(), path_executables.end(), filename) == path_executables.end()) {
-                    path_executables.push_back(filename);
-                  }
-                }
-              }
-            }
-          }
-        } catch (...) {}
-      }
-    }
+    path_executables = collectPathExecutables(search_text);
   }
 
   if (!builtins_done) {
