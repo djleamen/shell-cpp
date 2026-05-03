@@ -17,31 +17,42 @@ std::vector<BackgroundJob> bg_jobs;
 
 std::map<std::string, std::string, std::less<>> shell_variables;
 
+/// Expand a ${VAR} expression at index i; return new index.
+static size_t expandBraceVar(const std::string& arg, size_t i, std::string& out) {
+  size_t start = i + 2;
+  size_t close = arg.find('}', start);
+  if (close != std::string::npos) {
+    std::string varname = arg.substr(start, close - start);
+    if (auto it = shell_variables.find(varname); it != shell_variables.end())
+      out += it->second;
+    return close + 1;
+  }
+  out += arg[i];
+  return i + 1;
+}
+
+/// Expand a $VAR bare expression at index i; return new index.
+static size_t expandBareVar(const std::string& arg, size_t i, std::string& out) {
+  size_t start = i + 1;
+  size_t end   = start;
+  while (end < arg.size() && (std::isalnum((unsigned char)arg[end]) || arg[end] == '_'))
+    ++end;
+  std::string varname = arg.substr(start, end - start);
+  if (auto it = shell_variables.find(varname); it != shell_variables.end())
+    out += it->second;
+  return end;
+}
+
 void expandArgs(std::vector<std::string>& args) {
   for (auto& arg : args) {
     std::string expanded;
     size_t i = 0;
     while (i < arg.size()) {
       if (arg[i] == '$' && i + 1 < arg.size() && arg[i+1] == '{') {
-        size_t start = i + 2;
-        size_t close = arg.find('}', start);
-        if (close != std::string::npos) {
-          std::string varname = arg.substr(start, close - start);
-          if (auto it = shell_variables.find(varname); it != shell_variables.end()) expanded += it->second;
-          i = close + 1;
-        } else {
-          expanded += arg[i];
-          ++i;
-        }
+        i = expandBraceVar(arg, i, expanded);
       } else if (arg[i] == '$' && i + 1 < arg.size() &&
                  (std::isalpha((unsigned char)arg[i+1]) || arg[i+1] == '_')) {
-        size_t start = i + 1;
-        size_t end = start;
-        while (end < arg.size() && (std::isalnum((unsigned char)arg[end]) || arg[end] == '_'))
-          ++end;
-        std::string varname = arg.substr(start, end - start);
-        if (auto it = shell_variables.find(varname); it != shell_variables.end()) expanded += it->second;
-        i = end;
+        i = expandBareVar(arg, i, expanded);
       } else {
         expanded += arg[i];
         ++i;
