@@ -41,110 +41,114 @@ string findInPath(string_view program) {
   return "";
 }
 
-void executeBuiltinInChild(const vector<string>& args) {
-  string program = args[0];
+static void builtinEcho(const vector<string>& args) {
+  for (size_t i = 1; i < args.size(); ++i) {
+    if (i > 1) cout << " ";
+    cout << args[i];
+  }
+  cout << endl;
+}
 
-  if (program == "exit") {
-    exit(0);
+static void builtinType(const vector<string>& args) {
+  if (args.size() <= 1) return;
+  const string& arg = args[1];
+  if (isBuiltin(arg)) {
+    cout << arg << " is a shell builtin" << endl;
+  } else if (string path = findInPath(arg); !path.empty()) {
+    cout << arg << " is " << path << endl;
+  } else {
+    cout << arg << ": not found" << endl;
   }
-  else if (program == "echo") {
-    for (size_t i = 1; i < args.size(); ++i) {
-      if (i > 1) cout << " ";
-      cout << args[i];
-    }
-    cout << endl;
+}
+
+static void builtinPwd() {
+  try {
+    cout << fs::current_path().string() << endl;
+  } catch (const fs::filesystem_error&) {
+    cerr << "pwd: error getting current directory" << endl;
   }
-  else if (program == "type" && args.size() > 1) {
-    string arg = args[1];
-    if (isBuiltin(arg)) {
-      cout << arg << " is a shell builtin" << endl;
-    } else {
-      string path = findInPath(arg);
-      if (!path.empty()) {
-        cout << arg << " is " << path << endl;
-      } else {
-        cout << arg << ": not found" << endl;
-      }
-    }
-  }
-  else if (program == "pwd") {
-    try {
-      cout << fs::current_path().string() << endl;
-    } catch (const fs::filesystem_error&) {
-      cerr << "pwd: error getting current directory" << endl;
-    }
-  }
-  else if (program == "cd" && args.size() > 1) {
-    string path = args[1];
-    if (path == "~" || path.starts_with("~/")) {
-      const char* home_env = getenv("HOME");
-      if (home_env) {
-        string home(home_env);
-        path = (path == "~") ? home : home + path.substr(1);
-      }
-    }
-    if (chdir(path.c_str()) != 0) {
-      cout << "cd: " << path << ": No such file or directory" << endl;
+}
+
+static void builtinCd(const vector<string>& args) {
+  if (args.size() <= 1) return;
+  string path = args[1];
+  if (path == "~" || path.starts_with("~/")) {
+    const char* home_env = getenv("HOME");
+    if (home_env) {
+      string home(home_env);
+      path = (path == "~") ? home : home + path.substr(1);
     }
   }
-  else if (program == "jobs") {
-    exit(0);
+  if (chdir(path.c_str()) != 0) {
+    cout << "cd: " << path << ": No such file or directory" << endl;
   }
-  else if (program == "history") {
-    if (args.size() > 2 && args[1] == "-r") {
-      string filename = args[2];
-      ifstream file(filename);
-      if (file.is_open()) {
-        string line;
-        while (getline(file, line)) {
-          if (!line.empty()) add_history(line.c_str());
-        }
-        file.close();
-      } else {
-        cerr << "history: " << filename << ": No such file or directory" << endl;
-      }
-    } else if (args.size() > 2 && args[1] == "-w") {
-      string filename = args[2];
-      ofstream file(filename);
-      if (file.is_open()) {
-        int start = history_base;
-        int end = history_base + history_length;
-        for (int i = start; i < end; ++i) {
-          HIST_ENTRY* entry = history_get(i);
-          if (entry) file << entry->line << endl;
-        }
-        file.close();
-      } else {
-        cerr << "history: " << filename << ": cannot create" << endl;
-      }
-    } else if (args.size() > 2 && args[1] == "-a") {
-      string filename = args[2];
-      ofstream file(filename, ios::app);
-      if (file.is_open()) {
-        int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
-        int end = history_base + history_length;
-        for (int i = start; i < end; ++i) {
-          HIST_ENTRY* entry = history_get(i);
-          if (entry) file << entry->line << endl;
-        }
-        file.close();
-        last_appended_index = (history_base + history_length) - 1;
-      } else {
-        cerr << "history: " << filename << ": cannot create" << endl;
-      }
-    } else {
-      int start = history_base;
-      int end = history_base + history_length;
-      if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
-        int n = stoi(args[1]);
-        start = max(history_base, end - n);
-      }
-      for (int i = start; i < end; ++i) {
-        HIST_ENTRY* entry = history_get(i);
-        if (entry) cout << "    " << i << "  " << entry->line << endl;
-      }
-    }
+}
+
+static void historyRead(const string& filename) {
+  ifstream file(filename);
+  if (!file.is_open()) {
+    cerr << "history: " << filename << ": No such file or directory" << endl;
+    return;
   }
+  string line;
+  while (getline(file, line)) {
+    if (!line.empty()) add_history(line.c_str());
+  }
+}
+
+static void historyWrite(const string& filename) {
+  ofstream file(filename);
+  if (!file.is_open()) {
+    cerr << "history: " << filename << ": cannot create" << endl;
+    return;
+  }
+  int end = history_base + history_length;
+  for (int i = history_base; i < end; ++i) {
+    if (HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
+  }
+}
+
+static void historyAppend(const string& filename) {
+  ofstream file(filename, ios::app);
+  if (!file.is_open()) {
+    cerr << "history: " << filename << ": cannot create" << endl;
+    return;
+  }
+  int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
+  int end = history_base + history_length;
+  for (int i = start; i < end; ++i) {
+    if (HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
+  }
+  last_appended_index = end - 1;
+}
+
+static void historyList(const vector<string>& args) {
+  int start = history_base;
+  int end = history_base + history_length;
+  if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
+    int n = stoi(args[1]);
+    start = max(history_base, end - n);
+  }
+  for (int i = start; i < end; ++i) {
+    if (HIST_ENTRY* entry = history_get(i)) cout << "    " << i << "  " << entry->line << endl;
+  }
+}
+
+static void builtinHistory(const vector<string>& args) {
+  if (args.size() > 2 && args[1] == "-r")     { historyRead(args[2]); }
+  else if (args.size() > 2 && args[1] == "-w") { historyWrite(args[2]); }
+  else if (args.size() > 2 && args[1] == "-a") { historyAppend(args[2]); }
+  else                                          { historyList(args); }
+}
+
+void executeBuiltinInChild(const vector<string>& args) {
+  const string& program = args[0];
+  if (program == "exit")         { exit(0); }
+  else if (program == "echo")    { builtinEcho(args); }
+  else if (program == "type")    { builtinType(args); }
+  else if (program == "pwd")     { builtinPwd(); }
+  else if (program == "cd")      { builtinCd(args); }
+  else if (program == "history") { builtinHistory(args); }
   exit(0);
 }
 
