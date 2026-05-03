@@ -75,7 +75,8 @@ char* command_generator(const char* text, int state) {
 
   if (!builtins_done) {
     while (builtin_commands[list_index]) {
-      const char* name = builtin_commands[list_index++];
+      const char* name = builtin_commands[list_index];
+      ++list_index;
       string cmd_name(name);
       if (cmd_name.starts_with(search_text)) {
         return strdup(name);

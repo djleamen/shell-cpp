@@ -58,7 +58,13 @@ int main() {
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
+#ifdef __APPLE__
+  // macOS readline headers type this as VFunction* (void(*)()) — cast required.
+  rl_completion_display_matches_hook = reinterpret_cast<VFunction*>(display_matches_hook);
+#else
+  // Linux/GCC: typed as rl_compdisp_func_t* (void(*)(char**,int,int)) — plain assignment.
   rl_completion_display_matches_hook = display_matches_hook;
+#endif
 
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
