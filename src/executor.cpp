@@ -141,9 +141,8 @@ static void builtinHistory(const vector<string>& args) {
   else                                          { historyList(args); }
 }
 
-void executeBuiltinInChild(const vector<string>& args) {
-  const string& program = args[0];
-  if (program == "exit")         { exit(0); }
+[[noreturn]] void executeBuiltinInChild(const vector<string>& args) {
+  if (const string& program = args[0]; program == "exit")         { exit(0); }
   else if (program == "echo")    { builtinEcho(args); }
   else if (program == "type")    { builtinType(args); }
   else if (program == "pwd")     { builtinPwd(); }
@@ -197,12 +196,51 @@ void executeProgram(const string& path, const vector<string>& args,
   }
 }
 
+static void closePipes(const vector<vector<int>>& pipes) {
+  for (const auto& p : pipes) {
+    close(p[0]);
+    close(p[1]);
+  }
+}
+
+[[noreturn]] static void runPipelineChild(int i, int num_commands,
+                                           const vector<vector<int>>& pipes,
+                                           const CommandInfo& cmd,
+                                           const string& path, bool builtin) {
+  if (i > 0) dup2(pipes[i - 1][0], STDIN_FILENO);
+  if (i < num_commands - 1) dup2(pipes[i][1], STDOUT_FILENO);
+  closePipes(pipes);
+
+  if (i == num_commands - 1 && cmd.has_redirect && !cmd.output_file.empty()) {
+    int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
+    int fd = open(cmd.output_file.c_str(), flags, 0666);
+    if (fd == -1) { cerr << "Failed to open " << cmd.output_file << " for writing" << endl; exit(1); }
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+  }
+
+  if (cmd.has_error_redirect && !cmd.error_file.empty()) {
+    int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
+    int fd = open(cmd.error_file.c_str(), flags, 0666);
+    if (fd == -1) { cerr << "Failed to open " << cmd.error_file << " for writing" << endl; exit(1); }
+    dup2(fd, STDERR_FILENO);
+    close(fd);
+  }
+
+  if (builtin) {
+    executeBuiltinInChild(cmd.args);
+  }
+  vector<vector<char>> argv_storage;
+  auto argv = buildArgv(cmd.args, argv_storage);
+  execv(path.c_str(), argv.data());
+  cerr << "Failed to execute " << path << endl;
+  exit(1);
+}
+
 void executePipeline(const vector<CommandInfo>& commands) {
   if (commands.empty()) return;
 
-  int num_commands = commands.size();
-  vector<pid_t> pids;
-
+  int num_commands = (int)commands.size();
   vector<vector<int>> pipes(num_commands - 1, vector<int>(2));
   for (int i = 0; i < num_commands - 1; ++i) {
     if (pipe(pipes[i].data()) == -1) {
@@ -211,6 +249,7 @@ void executePipeline(const vector<CommandInfo>& commands) {
     }
   }
 
+  vector<pid_t> pids;
   for (int i = 0; i < num_commands; ++i) {
     const CommandInfo& cmd = commands[i];
     bool builtin = isBuiltin(cmd.args[0]);
@@ -219,49 +258,14 @@ void executePipeline(const vector<CommandInfo>& commands) {
       path = findInPath(cmd.args[0]);
       if (path.empty()) {
         cerr << cmd.args[0] << ": command not found" << endl;
-        for (int j = 0; j < num_commands - 1; ++j) {
-          close(pipes[j][0]);
-          close(pipes[j][1]);
-        }
+        closePipes(pipes);
         return;
       }
     }
 
     pid_t pid = fork();
     if (pid == 0) {
-      if (i > 0) dup2(pipes[i - 1][0], STDIN_FILENO);
-      if (i < num_commands - 1) dup2(pipes[i][1], STDOUT_FILENO);
-
-      for (int j = 0; j < num_commands - 1; ++j) {
-        close(pipes[j][0]);
-        close(pipes[j][1]);
-      }
-
-      if (i == num_commands - 1 && cmd.has_redirect && !cmd.output_file.empty()) {
-        int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
-        int fd = open(cmd.output_file.c_str(), flags, 0666);
-        if (fd == -1) { cerr << "Failed to open " << cmd.output_file << " for writing" << endl; exit(1); }
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
-      }
-
-      if (cmd.has_error_redirect && !cmd.error_file.empty()) {
-        int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
-        int fd = open(cmd.error_file.c_str(), flags, 0666);
-        if (fd == -1) { cerr << "Failed to open " << cmd.error_file << " for writing" << endl; exit(1); }
-        dup2(fd, STDERR_FILENO);
-        close(fd);
-      }
-
-      if (builtin) {
-        executeBuiltinInChild(cmd.args);
-      } else {
-        vector<vector<char>> argv_storage;
-        auto argv = buildArgv(cmd.args, argv_storage);
-        execv(path.c_str(), argv.data());
-        cerr << "Failed to execute " << path << endl;
-        exit(1);
-      }
+      runPipelineChild(i, num_commands, pipes, cmd, path, builtin);
     } else if (pid > 0) {
       pids.push_back(pid);
     } else {
@@ -269,11 +273,7 @@ void executePipeline(const vector<CommandInfo>& commands) {
     }
   }
 
-  for (int i = 0; i < num_commands - 1; ++i) {
-    close(pipes[i][0]);
-    close(pipes[i][1]);
-  }
-
+  closePipes(pipes);
   for (pid_t pid : pids) {
     int status;
     waitpid(pid, &status, 0);

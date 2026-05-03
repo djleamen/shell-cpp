@@ -34,7 +34,7 @@ std::string findInPath(std::string_view program);
  *
  * @param[in] args  Tokenized command words; args[0] is the built-in name.
  */
-void executeBuiltinInChild(const std::vector<std::string>& args);
+[[noreturn]] void executeBuiltinInChild(const std::vector<std::string>& args);
 
 /**
  * @brief Forks a child, optionally redirects stdout/stderr, and runs an
