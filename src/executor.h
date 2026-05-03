@@ -8,6 +8,7 @@
 #include "parser.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 /**
@@ -16,7 +17,7 @@
  * @param[in] cmd  The command name to check.
  * @return         true if @p cmd names a built-in, false otherwise.
  */
-bool isBuiltin(const std::string& cmd);
+bool isBuiltin(std::string_view cmd);
 
 /**
  * @brief Searches each directory in PATH for an executable named @p program.
@@ -25,7 +26,7 @@ bool isBuiltin(const std::string& cmd);
  * @return             Absolute path to the first matching executable, or an
  *                     empty string if none is found.
  */
-std::string findInPath(const std::string& program);
+std::string findInPath(std::string_view program);
 
 /**
  * @brief Executes a built-in command inside a forked child process, then

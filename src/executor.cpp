@@ -10,6 +10,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <string_view>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
@@ -19,13 +20,13 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-bool isBuiltin(const string& cmd) {
+bool isBuiltin(string_view cmd) {
   return cmd == "exit" || cmd == "echo" || cmd == "type" || cmd == "pwd"
       || cmd == "cd"   || cmd == "history" || cmd == "jobs" || cmd == "complete"
       || cmd == "declare";
 }
 
-string findInPath(const string& program) {
+string findInPath(string_view program) {
   const char* path_env = getenv("PATH");
   if (!path_env) return "";
   stringstream ss(path_env);
@@ -67,16 +68,15 @@ void executeBuiltinInChild(const vector<string>& args) {
     }
   }
   else if (program == "pwd") {
-    char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-      cout << cwd << endl;
-    } else {
+    try {
+      cout << fs::current_path().string() << endl;
+    } catch (const fs::filesystem_error&) {
       cerr << "pwd: error getting current directory" << endl;
     }
   }
   else if (program == "cd" && args.size() > 1) {
     string path = args[1];
-    if (path == "~" || path.substr(0, 2) == "~/") {
+    if (path == "~" || path.starts_with("~/")) {
       const char* home_env = getenv("HOME");
       if (home_env) {
         string home(home_env);
@@ -148,6 +148,19 @@ void executeBuiltinInChild(const vector<string>& args) {
   exit(0);
 }
 
+static vector<char*> buildArgv(const vector<string>& args, vector<vector<char>>& storage) {
+  storage.reserve(args.size());
+  vector<char*> argv;
+  argv.reserve(args.size() + 1);
+  for (const auto& arg : args) {
+    storage.emplace_back(arg.begin(), arg.end());
+    storage.back().push_back('\0');
+    argv.push_back(storage.back().data());
+  }
+  argv.push_back(nullptr);
+  return argv;
+}
+
 void executeProgram(const string& path, const vector<string>& args,
                     const string& output_file, bool is_append,
                     const string& error_file, bool is_error_append) {
@@ -168,15 +181,7 @@ void executeProgram(const string& path, const vector<string>& args,
       close(fd);
     }
     vector<vector<char>> argv_storage;
-    vector<char*> argv;
-    argv_storage.reserve(args.size());
-    argv.reserve(args.size() + 1);
-    for (const auto& arg : args) {
-      argv_storage.emplace_back(arg.begin(), arg.end());
-      argv_storage.back().push_back('\0');
-      argv.push_back(argv_storage.back().data());
-    }
-    argv.push_back(nullptr);
+    auto argv = buildArgv(args, argv_storage);
     execv(path.c_str(), argv.data());
     cerr << "Failed to execute " << path << endl;
     exit(1);
@@ -248,15 +253,7 @@ void executePipeline(const vector<CommandInfo>& commands) {
         executeBuiltinInChild(cmd.args);
       } else {
         vector<vector<char>> argv_storage;
-        vector<char*> argv;
-        argv_storage.reserve(cmd.args.size());
-        argv.reserve(cmd.args.size() + 1);
-        for (const auto& arg : cmd.args) {
-          argv_storage.emplace_back(arg.begin(), arg.end());
-          argv_storage.back().push_back('\0');
-          argv.push_back(argv_storage.back().data());
-        }
-        argv.push_back(nullptr);
+        auto argv = buildArgv(cmd.args, argv_storage);
         execv(path.c_str(), argv.data());
         cerr << "Failed to execute " << path << endl;
         exit(1);
