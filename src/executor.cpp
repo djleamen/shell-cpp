@@ -104,7 +104,7 @@ static void historyWrite(const string& filename) {
   }
   int end = history_base + history_length;
   for (int i = history_base; i < end; ++i) {
-    if (HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
+    if (const HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
   }
 }
 
@@ -117,7 +117,7 @@ static void historyAppend(const string& filename) {
   int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
   int end = history_base + history_length;
   for (int i = start; i < end; ++i) {
-    if (HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
+    if (const HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
   }
   last_appended_index = end - 1;
 }
@@ -130,7 +130,7 @@ static void historyList(const vector<string>& args) {
     start = max(history_base, end - n);
   }
   for (int i = start; i < end; ++i) {
-    if (HIST_ENTRY* entry = history_get(i)) cout << "    " << i << "  " << entry->line << endl;
+    if (const HIST_ENTRY* entry = history_get(i)) cout << "    " << i << "  " << entry->line << endl;
   }
 }
 
