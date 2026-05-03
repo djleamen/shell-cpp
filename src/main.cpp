@@ -126,6 +126,34 @@ int main() {
 
     string program = args[0];
 
+    // Expand $VAR references in all arguments
+    for (auto& arg : args) {
+      string expanded;
+      size_t i = 0;
+      while (i < arg.size()) {
+        if (arg[i] == '$' && i + 1 < arg.size() &&
+            (isalpha((unsigned char)arg[i+1]) || arg[i+1] == '_')) {
+          size_t start = i + 1;
+          size_t end = start;
+          while (end < arg.size() && (isalnum((unsigned char)arg[end]) || arg[end] == '_')) {
+            ++end;
+          }
+          string varname = arg.substr(start, end - start);
+          auto it = shell_variables.find(varname);
+          if (it != shell_variables.end()) {
+            expanded += it->second;
+          }
+          // undefined variable expands to empty string
+          i = end;
+        } else {
+          expanded += arg[i];
+          ++i;
+        }
+      }
+      arg = expanded;
+    }
+    program = args[0];
+
     if (run_in_bg) {
       string path = findInPath(program);
       if (!path.empty()) {
