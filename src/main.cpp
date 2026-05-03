@@ -24,6 +24,8 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <algorithm>
+#include <memory>
+#include <string_view>
 #include <vector>
 
 using namespace std;
@@ -66,7 +68,7 @@ static void saveHistory(const string& histfile) {
   ofstream file(histfile);
   if (!file.is_open()) return;
   for (int i = history_base; i < history_base + history_length; ++i) {
-    HIST_ENTRY* entry = history_get(i);
+    const HIST_ENTRY* entry = history_get(i);
     if (entry) file << entry->line << endl;
   }
 }
@@ -89,8 +91,8 @@ static void runType(const vector<string>& args) {
 }
 
 static void runPwd() {
-  char cwd[1024];
-  if (getcwd(cwd, sizeof(cwd)) != nullptr) cout << cwd << endl;
+  string cwd(1024, '\0');
+  if (getcwd(cwd.data(), cwd.size()) != nullptr) cout << cwd.c_str() << endl;
   else cerr << "pwd: error getting current directory" << endl;
 }
 
@@ -109,7 +111,7 @@ static void runHistoryAppend(const string& filename) {
   int start = (last_appended_index() == -1) ? history_base : last_appended_index() + 1;
   int end = history_base + history_length;
   for (int i = start; i < end; ++i) {
-    HIST_ENTRY* entry = history_get(i);
+    const HIST_ENTRY* entry = history_get(i);
     if (entry) file << entry->line << endl;
   }
   last_appended_index() = (history_base + history_length) - 1;
@@ -119,7 +121,7 @@ static void runHistoryWrite(const string& filename) {
   ofstream file(filename);
   if (!file.is_open()) { cerr << "history: " << filename << ": cannot create" << endl; return; }
   for (int i = history_base; i < history_base + history_length; ++i) {
-    HIST_ENTRY* entry = history_get(i);
+    const HIST_ENTRY* entry = history_get(i);
     if (entry) file << entry->line << endl;
   }
 }
@@ -131,7 +133,7 @@ static void runHistoryList(const vector<string>& args) {
     start = max(history_base, end - stoi(args[1]));
   }
   for (int i = start; i < end; ++i) {
-    HIST_ENTRY* entry = history_get(i);
+    const HIST_ENTRY* entry = history_get(i);
     if (entry) cout << "    " << i << "  " << entry->line << endl;
   }
 }
@@ -164,10 +166,10 @@ static void runDeclareSet(const string& assignment) {
   size_t eq = assignment.find('=');
   if (eq == string::npos) return;
   string varname = assignment.substr(0, eq);
-  bool valid = !varname.empty() && (isalpha(varname[0]) || varname[0] == '_');
-  for (size_t i = 1; valid && i < varname.size(); ++i) {
-    if (!isalnum(varname[i]) && varname[i] != '_') valid = false;
-  }
+  bool valid = !varname.empty()
+    && (isalpha(static_cast<unsigned char>(varname[0])) || varname[0] == '_')
+    && all_of(varname.begin() + 1, varname.end(),
+              [](unsigned char c){ return isalnum(c) || c == '_'; });
   if (!valid) cerr << "declare: `" << assignment << "': not a valid identifier" << endl;
   else        shell_variables()[varname] = assignment.substr(eq + 1);
 }
@@ -183,7 +185,7 @@ static void runDeclare(const vector<string>& args) {
 static void runCd(const vector<string>& args) {
   if (args.size() <= 1) return;
   string path = args[1];
-  if (path == "~" || path.substr(0, 2) == "~/") {
+  if (path == "~" || path.starts_with("~/")) {
     const char* home_env = getenv("HOME");
     if (home_env) {
       string home = home_env;
@@ -213,15 +215,15 @@ static void runBackground(const string& program, const vector<string>& args, con
     exit(1);
   } else if (pid > 0) {
     int job_num = nextJobNumber();
-    bg_jobs().push_back({job_num, pid, command});
+    bg_jobs().emplace_back(job_num, pid, command);
     cout << "[" << job_num << "] " << pid << endl;
   } else {
     cerr << "Fork failed" << endl;
   }
 }
 
-static bool dispatchBuiltin(const string& program, CommandInfo& cmd_info) {
-  vector<string>& args = cmd_info.args;
+static bool dispatchBuiltin(string_view program, const CommandInfo& cmd_info) {
+  const vector<string>& args = cmd_info.args;
   if (program == "exit")    return true;
   if (program == "echo")    { runEcho(args);     return false; }
   if (program == "type")    { runType(args);     return false; }
@@ -259,7 +261,10 @@ static bool processCommand(const string& command) {
   expandArgs(args);
   string program = args[0];
 
-  int saved_stdout = -1, redirect_fd = -1, saved_stderr = -1, error_redirect_fd = -1;
+  int saved_stdout = -1;
+  int redirect_fd = -1;
+  int saved_stderr = -1;
+  int error_redirect_fd = -1;
   setupBuiltinRedirects(cmd_info, saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
 
   bool should_exit = false;
@@ -287,15 +292,15 @@ int main() {
   string histfile = getHistfile();
   loadHistory(histfile);
 
-  while (true) {
+  bool should_exit = false;
+  do {
     reapJobs();
-    char* input = readline("$ ");
-    if (!input) break;
-    string command(input);
-    free(input);
+    unique_ptr<char, decltype(&free)> raw(readline("$ "), free);
+    if (!raw) break;
+    string command(raw.get());
     if (!command.empty()) add_history(command.c_str());
-    if (processCommand(command)) break;
-  }
+    should_exit = processCommand(command);
+  } while (!should_exit);
 
   saveHistory(histfile);
   return 0;
