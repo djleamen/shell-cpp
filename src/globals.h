@@ -14,13 +14,13 @@
  * @brief Tracks the readline history index of the last entry appended to the
  *        history file via `history -a`. -1 means no append has occurred yet.
  */
-extern int last_appended_index;
+int& last_appended_index();
 
 /**
  * @brief Maps a command name to the path of its external completion script.
  *        Populated by `complete -C <script> <cmd>`.
  */
-extern std::map<std::string, std::string, std::less<>> completion_registry;
+std::map<std::string, std::string, std::less<>>& completion_registry();
 
 /**
  * @brief Represents a single background job launched with `&`.
@@ -38,7 +38,7 @@ struct BackgroundJob {
 };
 
 /** @brief The live list of background jobs managed by this shell session. */
-extern std::vector<BackgroundJob> bg_jobs;
+std::vector<BackgroundJob>& bg_jobs();
 
 /** @brief Shell variable store populated by the declare builtin. */
 extern std::map<std::string, std::string, std::less<>> shell_variables;

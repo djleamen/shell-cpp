@@ -16,7 +16,7 @@ int nextJobNumber() {
   int num = 1;
   while (true) {
     bool used = false;
-    for (const auto& job : bg_jobs) {
+    for (const auto& job : bg_jobs()) {
       if (job.job_number == num) { used = true; break; }
     }
     if (!used) return num;
@@ -29,7 +29,7 @@ void sigchld_handler(int) {
   int wstatus;
   pid_t pid;
   while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
-    for (auto& job : bg_jobs) {
+    for (auto& job : bg_jobs()) {
       if (job.pid == pid && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
         job.done = true;
         break;
@@ -41,23 +41,23 @@ void sigchld_handler(int) {
 
 void reapJobs() {
   vector<int> done_indices;
-  for (int i = 0; i < (int)bg_jobs.size(); i++) {
-    if (!bg_jobs[i].done) {
+  for (int i = 0; i < (int)bg_jobs().size(); i++) {
+    if (!bg_jobs()[i].done) {
       int wstatus;
-      pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+      pid_t result = waitpid(bg_jobs()[i].pid, &wstatus, WNOHANG);
       if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
           (result < 0 && errno == ECHILD)) {
-        bg_jobs[i].done = true;
+        bg_jobs()[i].done = true;
       }
     }
-    if (bg_jobs[i].done) {
+    if (bg_jobs()[i].done) {
       done_indices.push_back(i);
     }
   }
-  int n = bg_jobs.size();
+  int n = bg_jobs().size();
   for (int i = 0; i < n; i++) {
     if (find(done_indices.begin(), done_indices.end(), i) != done_indices.end()) {
-      const auto& job = bg_jobs[i];
+      const auto& job = bg_jobs()[i];
       char marker = ' ';
       if (i == n - 1) marker = '+';
       else if (i == n - 2) marker = '-';
@@ -71,7 +71,7 @@ void reapJobs() {
     }
   }
   for (int i = done_indices.size() - 1; i >= 0; i--) {
-    bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
+    bg_jobs().erase(bg_jobs().begin() + done_indices[i]);
   }
 }
 
@@ -80,7 +80,7 @@ void listJobs() {
     int wstatus;
     pid_t p;
     while ((p = waitpid(-1, &wstatus, WNOHANG)) > 0) {
-      for (auto& job : bg_jobs) {
+      for (auto& job : bg_jobs()) {
         if (job.pid == p && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
           job.done = true;
           break;
@@ -88,20 +88,20 @@ void listJobs() {
       }
     }
   }
-  for (int i = 0; i < (int)bg_jobs.size(); i++) {
-    if (!bg_jobs[i].done) {
+  for (int i = 0; i < (int)bg_jobs().size(); i++) {
+    if (!bg_jobs()[i].done) {
       int wstatus;
       // Retry briefly to handle race where the process has exited but not yet
       // become a zombie (e.g., just received EOF from a FIFO write-end close).
       for (int attempt = 0; attempt < 5; attempt++) {
-        if (bg_jobs[i].done) break;
-        pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+        if (bg_jobs()[i].done) break;
+        pid_t result = waitpid(bg_jobs()[i].pid, &wstatus, WNOHANG);
         if (result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
-          bg_jobs[i].done = true;
+          bg_jobs()[i].done = true;
           break;
         }
         if (result < 0 && errno == ECHILD) {
-          bg_jobs[i].done = true;
+          bg_jobs()[i].done = true;
           break;
         }
         if (attempt < 4) usleep(50000); // 50ms between retries
@@ -109,12 +109,12 @@ void listJobs() {
     }
   }
   vector<int> done_indices;
-  for (int i = 0; i < (int)bg_jobs.size(); i++) {
-    if (bg_jobs[i].done) done_indices.push_back(i);
+  for (int i = 0; i < (int)bg_jobs().size(); i++) {
+    if (bg_jobs()[i].done) done_indices.push_back(i);
   }
-  int n = bg_jobs.size();
+  int n = bg_jobs().size();
   for (int i = 0; i < n; i++) {
-    const auto& job = bg_jobs[i];
+    const auto& job = bg_jobs()[i];
     char marker = ' ';
     if (i == n - 1) marker = '+';
     else if (i == n - 2) marker = '-';
@@ -128,6 +128,6 @@ void listJobs() {
     cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
   }
   for (int i = done_indices.size() - 1; i >= 0; i--) {
-    bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
+    bg_jobs().erase(bg_jobs().begin() + done_indices[i]);
   }
 }

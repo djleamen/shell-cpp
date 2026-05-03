@@ -153,7 +153,7 @@ int main() {
           exit(1);
         } else if (pid > 0) {
           int job_num = nextJobNumber();
-          bg_jobs.push_back({job_num, pid, command});
+          bg_jobs().push_back({job_num, pid, command});
           cout << "[" << job_num << "] " << pid << endl;
         } else {
           cerr << "Fork failed" << endl;
@@ -221,7 +221,7 @@ int main() {
         string filename = args[2];
         ofstream file(filename, ios::app);
         if (file.is_open()) {
-          int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
+          int start = (last_appended_index() == -1) ? history_base : last_appended_index() + 1;
           int end = history_base + history_length;
           for (int i = start; i < end; ++i) {
             HIST_ENTRY* entry = history_get(i);
@@ -230,7 +230,7 @@ int main() {
             }
           }
           file.close();
-          last_appended_index = (history_base + history_length) - 1;
+          last_appended_index() = (history_base + history_length) - 1;
         } else {
           cerr << "history: " << filename << ": cannot create" << endl;
         }
@@ -272,13 +272,13 @@ int main() {
     }
     else if (program == "complete") {
       if (args.size() > 3 && args[1] == "-C") {
-        completion_registry[args[3]] = args[2];
+        completion_registry()[args[3]] = args[2];
       } else if (args.size() > 2 && args[1] == "-r") {
-        completion_registry.erase(args[2]);
+        completion_registry().erase(args[2]);
       } else if (args.size() > 2 && args[1] == "-p") {
         string cmd = args[2];
-        auto it = completion_registry.find(cmd);
-        if (it != completion_registry.end()) {
+        auto it = completion_registry().find(cmd);
+        if (it != completion_registry().end()) {
           cout << "complete -C '" << it->second << "' " << cmd << endl;
         } else {
           cerr << "complete: " << cmd << ": no completion specification" << endl;

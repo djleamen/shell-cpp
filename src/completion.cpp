@@ -203,7 +203,7 @@ char** command_completion(const char* text, int start, int /*end*/) {
   size_t sp = line.find(' ');
   string cmd = (sp != string::npos) ? line.substr(0, sp) : line;
 
-  if (auto it = completion_registry.find(cmd); it != completion_registry.end()) {
+  if (auto it = completion_registry().find(cmd); it != completion_registry().end()) {
     getCompleterResults().clear();
 
     string before_cursor = line.substr(0, start);

@@ -9,15 +9,23 @@
 #include <cctype>
 #include <string_view>
 
-int last_appended_index = -1;
+int& last_appended_index() {
+  static int val = -1;
+  return val;
+}
 
-std::map<std::string, std::string, std::less<>> completion_registry;
+std::map<std::string, std::string, std::less<>>& completion_registry() {
+  static std::map<std::string, std::string, std::less<>> val;
+  return val;
+}
 
-std::vector<BackgroundJob> bg_jobs;
+std::vector<BackgroundJob>& bg_jobs() {
+  static std::vector<BackgroundJob> val;
+  return val;
+}
 
 std::map<std::string, std::string, std::less<>> shell_variables;
 
-/// Expand a ${VAR} expression at index i; return new index.
 static size_t expandBraceVar(const std::string& arg, size_t i, std::string& out) {
   size_t start = i + 2;
   size_t close = arg.find('}', start);
@@ -31,7 +39,6 @@ static size_t expandBraceVar(const std::string& arg, size_t i, std::string& out)
   return i + 1;
 }
 
-/// Expand a $VAR bare expression at index i; return new index.
 static size_t expandBareVar(const std::string& arg, size_t i, std::string& out) {
   size_t start = i + 1;
   size_t end   = start;

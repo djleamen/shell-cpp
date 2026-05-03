@@ -114,12 +114,12 @@ static void historyAppend(const string& filename) {
     cerr << "history: " << filename << ": cannot create" << endl;
     return;
   }
-  int start = (last_appended_index == -1) ? history_base : last_appended_index + 1;
+  int start = (last_appended_index() == -1) ? history_base : last_appended_index() + 1;
   int end = history_base + history_length;
   for (int i = start; i < end; ++i) {
     if (const HIST_ENTRY* entry = history_get(i)) file << entry->line << endl;
   }
-  last_appended_index = end - 1;
+  last_appended_index() = end - 1;
 }
 
 static void historyList(const vector<string>& args) {
