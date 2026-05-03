@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <sys/wait.h>
 #include <cerrno>
+#include <unistd.h>
 
 using namespace std;
 
@@ -90,10 +91,20 @@ void listJobs() {
   for (int i = 0; i < (int)bg_jobs.size(); i++) {
     if (!bg_jobs[i].done) {
       int wstatus;
-      pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
-      if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
-          (result < 0 && errno == ECHILD)) {
-        bg_jobs[i].done = true;
+      // Retry briefly to handle race where the process has exited but not yet
+      // become a zombie (e.g., just received EOF from a FIFO write-end close).
+      for (int attempt = 0; attempt < 5; attempt++) {
+        if (bg_jobs[i].done) break;
+        pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+        if (result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
+          bg_jobs[i].done = true;
+          break;
+        }
+        if (result < 0 && errno == ECHILD) {
+          bg_jobs[i].done = true;
+          break;
+        }
+        if (attempt < 4) usleep(50000); // 50ms between retries
       }
     }
   }
