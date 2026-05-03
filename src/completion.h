@@ -15,7 +15,7 @@
  *        completion script produces candidates.  Drained one entry per call
  *        by completer_generator.
  */
-extern std::vector<std::string> completer_results;
+std::vector<std::string>& getCompleterResults();
 
 /**
  * @brief Readline generator for command-name tab completion.

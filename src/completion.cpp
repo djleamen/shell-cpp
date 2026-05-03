@@ -15,7 +15,10 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-vector<string> completer_results;
+vector<string>& getCompleterResults() {
+  static vector<string> results;
+  return results;
+}
 
 char* command_generator(const char* text, int state) {
   static int list_index;
@@ -133,8 +136,8 @@ char* completer_generator(const char* /*text*/, int state) {
   if (!state) {
     idx = 0;
   }
-  while (idx < completer_results.size()) {
-    string candidate = completer_results[idx++];
+  while (idx < getCompleterResults().size()) {
+    string candidate = getCompleterResults()[idx++];
     if (candidate.empty()) continue;
     rl_completion_append_character = ' ';
     return strdup(candidate.c_str());
@@ -156,7 +159,7 @@ char** command_completion(const char* text, int start, int /*end*/) {
 
   auto it = completion_registry.find(cmd);
   if (it != completion_registry.end()) {
-    completer_results.clear();
+    getCompleterResults().clear();
 
     string before_cursor = line.substr(0, start);
     string prev_word;
@@ -196,11 +199,11 @@ char** command_completion(const char* text, int start, int /*end*/) {
       while (fgets(buf, sizeof(buf), fp)) {
         string out(buf);
         if (!out.empty() && out.back() == '\n') out.pop_back();
-        if (!out.empty()) completer_results.push_back(out);
+        if (!out.empty()) getCompleterResults().push_back(out);
       }
       pclose(fp);
     }
-    if (!completer_results.empty()) {
+    if (!getCompleterResults().empty()) {
       rl_attempted_completion_over = 1;
       return rl_completion_matches(text, completer_generator);
     }
