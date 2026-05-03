@@ -135,6 +135,7 @@ char* completer_generator(const char* /*text*/, int state) {
   }
   while (idx < completer_results.size()) {
     string candidate = completer_results[idx++];
+    if (candidate.empty()) continue;
     rl_completion_append_character = ' ';
     return strdup(candidate.c_str());
   }
