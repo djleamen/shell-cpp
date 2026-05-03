@@ -119,7 +119,9 @@ void listJobs() {
   int n = bg_jobs().size();
   for (int i = 0; i < n; i++) {
     const auto& job = bg_jobs()[i];
-    char marker = (i == n - 1) ? '+' : (i == n - 2) ? '-' : ' ';
+    char marker = ' ';
+    if (i == n - 1) marker = '+';
+    else if (i == n - 2) marker = '-';
     bool is_done = std::ranges::find(done_indices, i) != done_indices.end();
     string status_str = is_done ? "Done" : "Running";
     status_str.resize(24, ' ');
