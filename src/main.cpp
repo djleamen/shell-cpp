@@ -126,13 +126,29 @@ int main() {
 
     string program = args[0];
 
-    // Expand $VAR references in all arguments
+    // Expand $VAR and ${VAR} references in all arguments
     for (auto& arg : args) {
       string expanded;
       size_t i = 0;
       while (i < arg.size()) {
-        if (arg[i] == '$' && i + 1 < arg.size() &&
-            (isalpha((unsigned char)arg[i+1]) || arg[i+1] == '_')) {
+        if (arg[i] == '$' && i + 1 < arg.size() && arg[i+1] == '{') {
+          // ${VAR} form
+          size_t start = i + 2;
+          size_t close = arg.find('}', start);
+          if (close != string::npos) {
+            string varname = arg.substr(start, close - start);
+            auto it = shell_variables.find(varname);
+            if (it != shell_variables.end()) {
+              expanded += it->second;
+            }
+            i = close + 1;
+          } else {
+            expanded += arg[i];
+            ++i;
+          }
+        } else if (arg[i] == '$' && i + 1 < arg.size() &&
+                   (isalpha((unsigned char)arg[i+1]) || arg[i+1] == '_')) {
+          // $VAR form
           size_t start = i + 1;
           size_t end = start;
           while (end < arg.size() && (isalnum((unsigned char)arg[end]) || arg[end] == '_')) {
