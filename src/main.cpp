@@ -21,8 +21,6 @@
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/wait.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <algorithm>
@@ -60,7 +58,7 @@ int main() {
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
-  rl_completion_display_matches_hook = display_matches_hook;
+  rl_completion_display_matches_hook = reinterpret_cast<VFunction*>(display_matches_hook);
 
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
@@ -126,55 +124,7 @@ int main() {
 
     string program = args[0];
 
-    // Expand $VAR and ${VAR} references in all arguments
-    for (auto& arg : args) {
-      string expanded;
-      size_t i = 0;
-      while (i < arg.size()) {
-        if (arg[i] == '$' && i + 1 < arg.size() && arg[i+1] == '{') {
-          // ${VAR} form
-          size_t start = i + 2;
-          size_t close = arg.find('}', start);
-          if (close != string::npos) {
-            string varname = arg.substr(start, close - start);
-            auto it = shell_variables.find(varname);
-            if (it != shell_variables.end()) {
-              expanded += it->second;
-            }
-            i = close + 1;
-          } else {
-            expanded += arg[i];
-            ++i;
-          }
-        } else if (arg[i] == '$' && i + 1 < arg.size() &&
-                   (isalpha((unsigned char)arg[i+1]) || arg[i+1] == '_')) {
-          // $VAR form
-          size_t start = i + 1;
-          size_t end = start;
-          while (end < arg.size() && (isalnum((unsigned char)arg[end]) || arg[end] == '_')) {
-            ++end;
-          }
-          string varname = arg.substr(start, end - start);
-          auto it = shell_variables.find(varname);
-          if (it != shell_variables.end()) {
-            expanded += it->second;
-          }
-          // undefined variable expands to empty string
-          i = end;
-        } else {
-          expanded += arg[i];
-          ++i;
-        }
-      }
-      arg = expanded;
-    }
-    // Drop arguments that expanded to empty (unset variable with no surrounding text)
-    if (args.size() > 1) {
-      args.erase(
-        std::remove_if(args.begin() + 1, args.end(), [](const string& s) { return s.empty(); }),
-        args.end()
-      );
-    }
+    expandArgs(args);
     program = args[0];
 
     if (run_in_bg) {
@@ -213,23 +163,7 @@ int main() {
     int saved_stderr = -1;
     int error_redirect_fd = -1;
 
-    if (cmd_info.has_redirect && !cmd_info.output_file.empty()) {
-      saved_stdout = dup(STDOUT_FILENO);
-      int flags = O_WRONLY | O_CREAT | (cmd_info.is_append ? O_APPEND : O_TRUNC);
-      redirect_fd = open(cmd_info.output_file.c_str(), flags, 0666);
-      if (redirect_fd != -1) {
-        dup2(redirect_fd, STDOUT_FILENO);
-      }
-    }
-
-    if (cmd_info.has_error_redirect && !cmd_info.error_file.empty()) {
-      saved_stderr = dup(STDERR_FILENO);
-      int flags = O_WRONLY | O_CREAT | (cmd_info.is_error_append ? O_APPEND : O_TRUNC);
-      error_redirect_fd = open(cmd_info.error_file.c_str(), flags, 0666);
-      if (error_redirect_fd != -1) {
-        dup2(error_redirect_fd, STDERR_FILENO);
-      }
-    }
+    setupBuiltinRedirects(cmd_info, saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
 
     if (program == "exit") {
       break;
@@ -328,54 +262,7 @@ int main() {
       }
     }
     else if (program == "jobs") {
-      {
-        int wstatus;
-        pid_t p;
-        while ((p = waitpid(-1, &wstatus, WNOHANG)) > 0) {
-          for (auto& job : bg_jobs) {
-            if (job.pid == p && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
-              job.done = true;
-              break;
-            }
-          }
-        }
-      }
-      for (int i = 0; i < (int)bg_jobs.size(); i++) {
-        if (!bg_jobs[i].done) {
-          int wstatus;
-          pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
-          if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
-              (result < 0 && errno == ECHILD)) {
-            bg_jobs[i].done = true;
-          }
-        }
-      }
-      vector<int> done_indices;
-      for (int i = 0; i < (int)bg_jobs.size(); i++) {
-        if (bg_jobs[i].done) {
-          done_indices.push_back(i);
-        }
-      }
-      int n = bg_jobs.size();
-      for (int i = 0; i < n; i++) {
-        const auto& job = bg_jobs[i];
-        char marker = ' ';
-        if (i == n - 1) marker = '+';
-        else if (i == n - 2) marker = '-';
-        bool is_done = find(done_indices.begin(), done_indices.end(), i) != done_indices.end();
-        string status_str = is_done ? "Done" : "Running";
-        status_str.resize(24, ' ');
-        string cmd = job.command;
-        if (is_done) {
-          if (cmd.size() >= 2 && cmd.substr(cmd.size() - 2) == " &") {
-            cmd = cmd.substr(0, cmd.size() - 2);
-          }
-        }
-        cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
-      }
-      for (int i = done_indices.size() - 1; i >= 0; i--) {
-        bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
-      }
+      listJobs();
     }
     else if (program == "complete") {
       if (args.size() > 3 && args[1] == "-C") {
@@ -404,12 +291,10 @@ int main() {
           }
         }
       } else if (args.size() > 1) {
-        // declare NAME=VALUE
         string assignment = args[1];
         size_t eq = assignment.find('=');
         if (eq != string::npos) {
           string varname = assignment.substr(0, eq);
-          // Validate identifier: must start with letter or '_', rest alphanumeric or '_'
           bool valid = !varname.empty() && (isalpha(varname[0]) || varname[0] == '_');
           for (size_t i = 1; valid && i < varname.size(); ++i) {
             if (!isalnum(varname[i]) && varname[i] != '_') valid = false;
@@ -444,19 +329,7 @@ int main() {
       }
     }
     else {
-      if (saved_stdout != -1) {
-        dup2(saved_stdout, STDOUT_FILENO);
-        close(saved_stdout);
-        if (redirect_fd != -1) close(redirect_fd);
-        saved_stdout = -1;
-      }
-
-      if (saved_stderr != -1) {
-        dup2(saved_stderr, STDERR_FILENO);
-        close(saved_stderr);
-        if (error_redirect_fd != -1) close(error_redirect_fd);
-        saved_stderr = -1;
-      }
+      restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
 
       string path = findInPath(program);
       if (!path.empty()) {
@@ -470,17 +343,7 @@ int main() {
       }
     }
 
-    if (saved_stdout != -1) {
-      dup2(saved_stdout, STDOUT_FILENO);
-      close(saved_stdout);
-      if (redirect_fd != -1) close(redirect_fd);
-    }
-
-    if (saved_stderr != -1) {
-      dup2(saved_stderr, STDERR_FILENO);
-      close(saved_stderr);
-      if (error_redirect_fd != -1) close(error_redirect_fd);
-    }
+    restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
   }
 
   if (!histfile.empty()) {

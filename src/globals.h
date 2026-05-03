@@ -23,6 +23,11 @@ extern std::map<std::string, std::string> completion_registry;
 
 /**
  * @brief Represents a single background job launched with `&`.
+ *
+ * @var BackgroundJob::job_number  Shell-assigned job index (≥ 1), unique among active jobs.
+ * @var BackgroundJob::pid         OS process ID of the background child.
+ * @var BackgroundJob::command     Raw command string as typed by the user.
+ * @var BackgroundJob::done        Set to true when the child has exited or been signalled.
  */
 struct BackgroundJob {
   int job_number;
@@ -39,3 +44,13 @@ extern std::map<std::string, std::string> shell_variables;
 
 /** @brief Null-terminated array of built-in command names. */
 extern const char* builtin_commands[];
+
+/**
+ * @brief Expands $VAR and ${VAR} references in-place for every element of
+ *        @p args.  Non-program arguments that expand to an empty string
+ *        (i.e. an unset variable with no surrounding text) are dropped.
+ *        args[0] (the program name) is never removed.
+ *
+ * @param[in,out] args  Token list to expand; modified in place.
+ */
+void expandArgs(std::vector<std::string>& args);

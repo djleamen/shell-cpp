@@ -278,3 +278,38 @@ void executePipeline(const vector<CommandInfo>& commands) {
     waitpid(pid, &status, 0);
   }
 }
+
+void setupBuiltinRedirects(const CommandInfo& cmd,
+                           int& saved_stdout, int& redirect_fd,
+                           int& saved_stderr, int& error_redirect_fd) {
+  if (cmd.has_redirect && !cmd.output_file.empty()) {
+    saved_stdout = dup(STDOUT_FILENO);
+    int flags = O_WRONLY | O_CREAT | (cmd.is_append ? O_APPEND : O_TRUNC);
+    redirect_fd = open(cmd.output_file.c_str(), flags, 0666);
+    if (redirect_fd != -1) dup2(redirect_fd, STDOUT_FILENO);
+  }
+  if (cmd.has_error_redirect && !cmd.error_file.empty()) {
+    saved_stderr = dup(STDERR_FILENO);
+    int flags = O_WRONLY | O_CREAT | (cmd.is_error_append ? O_APPEND : O_TRUNC);
+    error_redirect_fd = open(cmd.error_file.c_str(), flags, 0666);
+    if (error_redirect_fd != -1) dup2(error_redirect_fd, STDERR_FILENO);
+  }
+}
+
+void restoreBuiltinRedirects(int& saved_stdout, int& redirect_fd,
+                             int& saved_stderr, int& error_redirect_fd) {
+  if (saved_stdout != -1) {
+    dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdout);
+    if (redirect_fd != -1) close(redirect_fd);
+    saved_stdout = -1;
+    redirect_fd = -1;
+  }
+  if (saved_stderr != -1) {
+    dup2(saved_stderr, STDERR_FILENO);
+    close(saved_stderr);
+    if (error_redirect_fd != -1) close(error_redirect_fd);
+    saved_stderr = -1;
+    error_redirect_fd = -1;
+  }
+}

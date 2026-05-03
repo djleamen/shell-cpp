@@ -73,3 +73,50 @@ void reapJobs() {
     bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
   }
 }
+
+void listJobs() {
+  {
+    int wstatus;
+    pid_t p;
+    while ((p = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+      for (auto& job : bg_jobs) {
+        if (job.pid == p && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) {
+          job.done = true;
+          break;
+        }
+      }
+    }
+  }
+  for (int i = 0; i < (int)bg_jobs.size(); i++) {
+    if (!bg_jobs[i].done) {
+      int wstatus;
+      pid_t result = waitpid(bg_jobs[i].pid, &wstatus, WNOHANG);
+      if ((result > 0 && (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))) ||
+          (result < 0 && errno == ECHILD)) {
+        bg_jobs[i].done = true;
+      }
+    }
+  }
+  vector<int> done_indices;
+  for (int i = 0; i < (int)bg_jobs.size(); i++) {
+    if (bg_jobs[i].done) done_indices.push_back(i);
+  }
+  int n = bg_jobs.size();
+  for (int i = 0; i < n; i++) {
+    const auto& job = bg_jobs[i];
+    char marker = ' ';
+    if (i == n - 1) marker = '+';
+    else if (i == n - 2) marker = '-';
+    bool is_done = find(done_indices.begin(), done_indices.end(), i) != done_indices.end();
+    string status_str = is_done ? "Done" : "Running";
+    status_str.resize(24, ' ');
+    string cmd = job.command;
+    if (is_done && cmd.size() >= 2 && cmd.substr(cmd.size() - 2) == " &") {
+      cmd = cmd.substr(0, cmd.size() - 2);
+    }
+    cout << "[" << job.job_number << "]" << marker << "  " << status_str << cmd << endl;
+  }
+  for (int i = done_indices.size() - 1; i >= 0; i--) {
+    bg_jobs.erase(bg_jobs.begin() + done_indices[i]);
+  }
+}
