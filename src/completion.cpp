@@ -8,6 +8,7 @@
 #include <sstream>
 #include <cstdio>
 #include <cstring>
+#include <string_view>
 #include <algorithm>
 #include <filesystem>
 #include <readline/history.h>
@@ -28,15 +29,16 @@ static bool isExecutable(const fs::directory_entry& entry) {
          (perms & others_exec) != none;
 }
 
-static vector<string> collectPathExecutables(const string& prefix) {
+static vector<string> collectPathExecutables(string_view prefix) {
   vector<string> results;
   const char* path_env = getenv("PATH");
   if (!path_env) return results;
 
   const size_t len = prefix.length();
   stringstream ss(path_env);
-  string dir;
-  while (getline(ss, dir, ':')) {
+  string dir_str;
+  while (getline(ss, dir_str, ':')) {
+    fs::path dir(dir_str);
     if (!fs::exists(dir)) continue;
     try {
       for (const auto& entry : fs::directory_iterator(dir)) {
