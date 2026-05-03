@@ -240,7 +240,7 @@ static void closePipes(const vector<vector<int>>& pipes) {
 void executePipeline(const vector<CommandInfo>& commands) {
   if (commands.empty()) return;
 
-  int num_commands = (int)commands.size();
+  auto num_commands = (int)commands.size();
   vector<vector<int>> pipes(num_commands - 1, vector<int>(2));
   for (int i = 0; i < num_commands - 1; ++i) {
     if (pipe(pipes[i].data()) == -1) {
