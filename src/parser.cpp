@@ -11,11 +11,12 @@ using namespace std;
 static pair<bool, vector<string>> splitByPipe(const string& command) {
   vector<string> segments;
   string current;
-  bool in_single = false, in_double = false, has_pipe = false;
+  bool in_single = false;
+  bool in_double = false;
+  bool has_pipe = false;
   size_t i = 0;
   while (i < command.size()) {
-    char c = command[i];
-    if (c == '\\' && !in_single && i + 1 < command.size()) {
+    if (char c = command[i]; c == '\\' && !in_single && i + 1 < command.size()) {
       current += c;
       ++i;
       current += command[i];
@@ -41,11 +42,11 @@ static pair<bool, vector<string>> splitByPipe(const string& command) {
 static vector<string> tokenise(const string& cmd_str) {
   vector<string> tokens;
   string current;
-  bool in_single = false, in_double = false;
+  bool in_single = false;
+  bool in_double = false;
   size_t i = 0;
   while (i < cmd_str.size()) {
-    char c = cmd_str[i];
-    if (c == '\\' && !in_single && !in_double) {
+    if (char c = cmd_str[i]; c == '\\' && !in_single && !in_double) {
       if (i + 1 < cmd_str.size()) { ++i; current += cmd_str[i]; }
       else                          current += c;
     } else if (c == '\\' && in_double) {
@@ -71,19 +72,22 @@ static void extractRedirects(vector<string>& args, CommandInfo& info) {
   vector<string> clean;
   size_t i = 0;
   while (i < args.size()) {
-    const string& tok = args[i];
-    if ((tok == ">>" || tok == "1>>") && i + 1 < args.size()) {
+    if (const string& tok = args[i]; (tok == ">>" || tok == "1>>") && i + 1 < args.size()) {
       info.has_redirect = true; info.is_append = true;
-      info.output_file = args[++i];
+      ++i;
+      info.output_file = args[i];
     } else if ((tok == ">" || tok == "1>") && i + 1 < args.size()) {
       info.has_redirect = true; info.is_append = false;
-      info.output_file = args[++i];
+      ++i;
+      info.output_file = args[i];
     } else if (tok == "2>>" && i + 1 < args.size()) {
       info.has_error_redirect = true; info.is_error_append = true;
-      info.error_file = args[++i];
+      ++i;
+      info.error_file = args[i];
     } else if (tok == "2>" && i + 1 < args.size()) {
       info.has_error_redirect = true; info.is_error_append = false;
-      info.error_file = args[++i];
+      ++i;
+      info.error_file = args[i];
     } else {
       clean.push_back(tok);
     }
