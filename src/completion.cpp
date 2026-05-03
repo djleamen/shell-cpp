@@ -34,7 +34,6 @@ static vector<string> collectPathExecutables(string_view prefix) {
   const char* path_env = getenv("PATH");
   if (!path_env) return results;
 
-  const size_t len = prefix.length();
   stringstream ss(path_env);
   string dir_str;
   while (getline(ss, dir_str, ':')) {
@@ -44,13 +43,15 @@ static vector<string> collectPathExecutables(string_view prefix) {
       for (const auto& entry : fs::directory_iterator(dir)) {
         if (!entry.is_regular_file()) continue;
         string filename = entry.path().filename().string();
-        if (filename.length() < len || filename.substr(0, len) != prefix) continue;
+        if (!filename.starts_with(prefix)) continue;
         if (!isExecutable(entry)) continue;
-        if (find(results.begin(), results.end(), filename) == results.end()) {
+        if (ranges::find(results, filename) == results.end()) {
           results.push_back(filename);
         }
       }
-    } catch (...) {}
+    } catch (const fs::filesystem_error&) {
+      // Skip directories that cannot be read (permission denied, broken symlinks, etc.)
+    }
   }
   return results;
 }
@@ -84,7 +85,9 @@ char* command_generator(const char* text, int state) {
   }
 
   if (path_exec_index < path_executables.size()) {
-    return strdup(path_executables[path_exec_index++].c_str());
+    const string& exe = path_executables[path_exec_index];
+    ++path_exec_index;
+    return strdup(exe.c_str());
   }
 
   return nullptr;
