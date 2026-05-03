@@ -39,6 +39,13 @@ static pair<bool, vector<string>> splitByPipe(const string& command) {
   return {has_pipe, segments};
 }
 
+static void handleBackslash(const string& str, size_t& i, string& current, bool in_double) {
+  if (i + 1 >= str.size()) { current += '\\'; return; }
+  char next = str[i + 1];
+  if (!in_double || next == '"' || next == '\\') { ++i; current += str[i]; }
+  else                                              current += '\\';
+}
+
 static vector<string> tokenise(const string& cmd_str) {
   vector<string> tokens;
   string current;
@@ -46,13 +53,8 @@ static vector<string> tokenise(const string& cmd_str) {
   bool in_double = false;
   size_t i = 0;
   while (i < cmd_str.size()) {
-    if (char c = cmd_str[i]; c == '\\' && !in_single && !in_double) {
-      if (i + 1 < cmd_str.size()) { ++i; current += cmd_str[i]; }
-      else                          current += c;
-    } else if (c == '\\' && in_double) {
-      char next = (i + 1 < cmd_str.size()) ? cmd_str[i + 1] : '\0';
-      if (next == '"' || next == '\\') { ++i; current += cmd_str[i]; }
-      else                               current += c;
+    if (char c = cmd_str[i]; c == '\\' && !in_single) {
+      handleBackslash(cmd_str, i, current, in_double);
     } else if (c == '\'' && !in_double) {
       in_single = !in_single;
     } else if (c == '"' && !in_single) {
