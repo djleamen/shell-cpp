@@ -28,35 +28,9 @@
 
 using namespace std;
 
-/**
- * @brief Shell entry point implementing the Read-Eval-Print Loop (REPL).
- *
- * Startup:
- *  1. Enables immediate flushing of cout and cerr.
- *  2. Registers command_completion and display_matches_hook with readline.
- *  3. Installs sigchld_handler via sigaction(SIGCHLD).
- *  4. Loads command history from HISTFILE (if set).
- *
- * REPL loop:
- *  1. Reap  - notify the user of any completed background jobs.
- *  2. Read  - display "$ " prompt and read a line via readline; exit on EOF.
- *  3. Eval  - parse the line with parsePipeline() and dispatch:
- *               - Empty input: skip.
- *               - Pipeline (|): call executePipeline().
- *               - Background job (&): fork without waiting, register in bg_jobs.
- *               - Built-in commands: handle inline with I/O redirection scaffolding.
- *               - External commands: call executeProgram().
- *  4. Restore - undo any stdout/stderr redirection done for built-ins.
- *
- * Shutdown:
- *  - Writes the full readline history to HISTFILE (if set).
- *
- * @return 0 on normal exit.
- */
-int main() {
+static void initShell() {
   cout << unitbuf;
   cerr << unitbuf;
-
   rl_attempted_completion_function = command_completion;
 #ifdef __APPLE__
   // macOS readline headers type this as VFunction* (void(*)()) — cast required.
@@ -65,307 +39,264 @@ int main() {
   // Linux/GCC: typed as rl_compdisp_func_t* (void(*)(char**,int,int)) — plain assignment.
   rl_completion_display_matches_hook = display_matches_hook;
 #endif
-
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
   sigaction(SIGCHLD, &sa, nullptr);
+}
 
-  string histfile;
-  const char* histfile_env = getenv("HISTFILE");
-  if (histfile_env) {
-    histfile = histfile_env;
+static string getHistfile() {
+  const char* e = getenv("HISTFILE");
+  return e ? string(e) : string();
+}
+
+static void loadHistory(const string& histfile) {
+  if (histfile.empty()) return;
+  ifstream file(histfile);
+  if (!file.is_open()) return;
+  string line;
+  while (getline(file, line)) {
+    if (!line.empty()) add_history(line.c_str());
   }
+}
 
-  if (!histfile.empty()) {
-    ifstream file(histfile);
-    if (file.is_open()) {
-      string line;
-      while (getline(file, line)) {
-        if (!line.empty()) {
-          add_history(line.c_str());
-        }
-      }
-      file.close();
+static void saveHistory(const string& histfile) {
+  if (histfile.empty()) return;
+  ofstream file(histfile);
+  if (!file.is_open()) return;
+  for (int i = history_base; i < history_base + history_length; ++i) {
+    HIST_ENTRY* entry = history_get(i);
+    if (entry) file << entry->line << endl;
+  }
+}
+
+static void runEcho(const vector<string>& args) {
+  for (size_t i = 1; i < args.size(); ++i) {
+    if (i > 1) cout << " ";
+    cout << args[i];
+  }
+  cout << endl;
+}
+
+static void runType(const vector<string>& args) {
+  if (args.size() <= 1) return;
+  const string& arg = args[1];
+  if (isBuiltin(arg)) { cout << arg << " is a shell builtin" << endl; return; }
+  string path = findInPath(arg);
+  if (!path.empty()) cout << arg << " is " << path << endl;
+  else               cout << arg << ": not found" << endl;
+}
+
+static void runPwd() {
+  char cwd[1024];
+  if (getcwd(cwd, sizeof(cwd)) != nullptr) cout << cwd << endl;
+  else cerr << "pwd: error getting current directory" << endl;
+}
+
+static void runHistoryRead(const string& filename) {
+  ifstream file(filename);
+  if (!file.is_open()) { cerr << "history: " << filename << ": No such file or directory" << endl; return; }
+  string line;
+  while (getline(file, line)) {
+    if (!line.empty()) add_history(line.c_str());
+  }
+}
+
+static void runHistoryAppend(const string& filename) {
+  ofstream file(filename, ios::app);
+  if (!file.is_open()) { cerr << "history: " << filename << ": cannot create" << endl; return; }
+  int start = (last_appended_index() == -1) ? history_base : last_appended_index() + 1;
+  int end = history_base + history_length;
+  for (int i = start; i < end; ++i) {
+    HIST_ENTRY* entry = history_get(i);
+    if (entry) file << entry->line << endl;
+  }
+  last_appended_index() = (history_base + history_length) - 1;
+}
+
+static void runHistoryWrite(const string& filename) {
+  ofstream file(filename);
+  if (!file.is_open()) { cerr << "history: " << filename << ": cannot create" << endl; return; }
+  for (int i = history_base; i < history_base + history_length; ++i) {
+    HIST_ENTRY* entry = history_get(i);
+    if (entry) file << entry->line << endl;
+  }
+}
+
+static void runHistoryList(const vector<string>& args) {
+  int end = history_base + history_length;
+  int start = history_base;
+  if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
+    start = max(history_base, end - stoi(args[1]));
+  }
+  for (int i = start; i < end; ++i) {
+    HIST_ENTRY* entry = history_get(i);
+    if (entry) cout << "    " << i << "  " << entry->line << endl;
+  }
+}
+
+static void runHistory(const vector<string>& args) {
+  if (args.size() > 2 && args[1] == "-r") { runHistoryRead(args[2]);   return; }
+  if (args.size() > 2 && args[1] == "-a") { runHistoryAppend(args[2]); return; }
+  if (args.size() > 2 && args[1] == "-w") { runHistoryWrite(args[2]);  return; }
+  runHistoryList(args);
+}
+
+static void runComplete(const vector<string>& args) {
+  if (args.size() > 3 && args[1] == "-C") { completion_registry()[args[3]] = args[2]; return; }
+  if (args.size() > 2 && args[1] == "-r") { completion_registry().erase(args[2]);     return; }
+  if (args.size() > 2 && args[1] == "-p") {
+    const string& cmd = args[2];
+    auto it = completion_registry().find(cmd);
+    if (it != completion_registry().end()) cout << "complete -C '" << it->second << "' " << cmd << endl;
+    else cerr << "complete: " << cmd << ": no completion specification" << endl;
+  }
+}
+
+static void runDeclareShow(const string& varname) {
+  auto it = shell_variables().find(varname);
+  if (it != shell_variables().end()) cout << "declare -- " << it->first << "=\"" << it->second << "\"" << endl;
+  else cerr << "declare: " << varname << ": not found" << endl;
+}
+
+static void runDeclareSet(const string& assignment) {
+  size_t eq = assignment.find('=');
+  if (eq == string::npos) return;
+  string varname = assignment.substr(0, eq);
+  bool valid = !varname.empty() && (isalpha(varname[0]) || varname[0] == '_');
+  for (size_t i = 1; valid && i < varname.size(); ++i) {
+    if (!isalnum(varname[i]) && varname[i] != '_') valid = false;
+  }
+  if (!valid) cerr << "declare: `" << assignment << "': not a valid identifier" << endl;
+  else        shell_variables()[varname] = assignment.substr(eq + 1);
+}
+
+static void runDeclare(const vector<string>& args) {
+  if (args.size() > 1 && args[1] == "-p") {
+    if (args.size() > 2) runDeclareShow(args[2]);
+    return;
+  }
+  if (args.size() > 1) runDeclareSet(args[1]);
+}
+
+static void runCd(const vector<string>& args) {
+  if (args.size() <= 1) return;
+  string path = args[1];
+  if (path == "~" || path.substr(0, 2) == "~/") {
+    const char* home_env = getenv("HOME");
+    if (home_env) {
+      string home = home_env;
+      path = (path == "~") ? home : home + path.substr(1);
     }
   }
+  if (chdir(path.c_str()) != 0) cout << "cd: " << path << ": No such file or directory" << endl;
+}
+
+static void runBackground(const string& program, const vector<string>& args, const string& command) {
+  string path = findInPath(program);
+  if (path.empty()) { cout << program << ": command not found" << endl; return; }
+  pid_t pid = fork();
+  if (pid == 0) {
+    vector<vector<char>> argv_storage;
+    vector<char*> argv;
+    argv_storage.reserve(args.size());
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+      argv_storage.emplace_back(arg.begin(), arg.end());
+      argv_storage.back().push_back('\0');
+      argv.push_back(argv_storage.back().data());
+    }
+    argv.push_back(nullptr);
+    execv(path.c_str(), argv.data());
+    cerr << "Failed to execute " << path << endl;
+    exit(1);
+  } else if (pid > 0) {
+    int job_num = nextJobNumber();
+    bg_jobs().push_back({job_num, pid, command});
+    cout << "[" << job_num << "] " << pid << endl;
+  } else {
+    cerr << "Fork failed" << endl;
+  }
+}
+
+static bool dispatchBuiltin(const string& program, CommandInfo& cmd_info) {
+  vector<string>& args = cmd_info.args;
+  if (program == "exit")    return true;
+  if (program == "echo")    { runEcho(args);     return false; }
+  if (program == "type")    { runType(args);     return false; }
+  if (program == "pwd")     { runPwd();          return false; }
+  if (program == "history") { runHistory(args);  return false; }
+  if (program == "jobs")    { listJobs();        return false; }
+  if (program == "complete"){ runComplete(args); return false; }
+  if (program == "declare") { runDeclare(args);  return false; }
+  if (program == "cd")      { runCd(args);       return false; }
+  return false;
+}
+
+static bool processCommand(const string& command) {
+  PipelineInfo pipeline = parsePipeline(command);
+  if (pipeline.commands.empty() ||
+      (pipeline.commands.size() == 1 && pipeline.commands[0].args.empty())) {
+    return false;
+  }
+  if (pipeline.has_pipe && pipeline.commands.size() > 1) {
+    executePipeline(pipeline.commands);
+    return false;
+  }
+
+  CommandInfo cmd_info = pipeline.commands[0];
+  vector<string>& args = cmd_info.args;
+
+  if (!args.empty() && args.back() == "&") {
+    args.pop_back();
+    if (args.empty()) return false;
+    expandArgs(args);
+    runBackground(args[0], args, command);
+    return false;
+  }
+
+  expandArgs(args);
+  string program = args[0];
+
+  int saved_stdout = -1, redirect_fd = -1, saved_stderr = -1, error_redirect_fd = -1;
+  setupBuiltinRedirects(cmd_info, saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
+
+  bool should_exit = false;
+  if (isBuiltin(program) || program == "exit") {
+    should_exit = dispatchBuiltin(program, cmd_info);
+  } else {
+    restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
+    string path = findInPath(program);
+    if (!path.empty()) {
+      executeProgram(path, args,
+                    cmd_info.has_redirect ? cmd_info.output_file : "",
+                    cmd_info.is_append,
+                    cmd_info.has_error_redirect ? cmd_info.error_file : "",
+                    cmd_info.is_error_append);
+    } else {
+      cout << program << ": command not found" << endl;
+    }
+  }
+  restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
+  return should_exit;
+}
+
+int main() {
+  initShell();
+  string histfile = getHistfile();
+  loadHistory(histfile);
 
   while (true) {
     reapJobs();
     char* input = readline("$ ");
-
-    if (!input) {
-      break;
-    }
-
+    if (!input) break;
     string command(input);
     free(input);
-
-    if (!command.empty()) {
-      add_history(command.c_str());
-    }
-
-    PipelineInfo pipeline = parsePipeline(command);
-
-    if (pipeline.commands.empty() ||
-        (pipeline.commands.size() == 1 && pipeline.commands[0].args.empty())) {
-      continue;
-    }
-
-    if (pipeline.has_pipe && pipeline.commands.size() > 1) {
-      executePipeline(pipeline.commands);
-      continue;
-    }
-
-    CommandInfo cmd_info = pipeline.commands[0];
-    vector<string>& args = cmd_info.args;
-
-    bool run_in_bg = false;
-    if (!args.empty() && args.back() == "&") {
-      run_in_bg = true;
-      args.pop_back();
-      if (args.empty()) continue;
-    }
-
-    string program = args[0];
-
-    expandArgs(args);
-    program = args[0];
-
-    if (run_in_bg) {
-      string path = findInPath(program);
-      if (!path.empty()) {
-        pid_t pid = fork();
-        if (pid == 0) {
-          vector<vector<char>> argv_storage;
-          vector<char*> argv;
-          argv_storage.reserve(args.size());
-          argv.reserve(args.size() + 1);
-          for (const auto& arg : args) {
-            argv_storage.emplace_back(arg.begin(), arg.end());
-            argv_storage.back().push_back('\0');
-            argv.push_back(argv_storage.back().data());
-          }
-          argv.push_back(nullptr);
-          execv(path.c_str(), argv.data());
-          cerr << "Failed to execute " << path << endl;
-          exit(1);
-        } else if (pid > 0) {
-          int job_num = nextJobNumber();
-          bg_jobs().push_back({job_num, pid, command});
-          cout << "[" << job_num << "] " << pid << endl;
-        } else {
-          cerr << "Fork failed" << endl;
-        }
-      } else {
-        cout << program << ": command not found" << endl;
-      }
-      continue;
-    }
-
-    int saved_stdout = -1;
-    int redirect_fd = -1;
-    int saved_stderr = -1;
-    int error_redirect_fd = -1;
-
-    setupBuiltinRedirects(cmd_info, saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
-
-    if (program == "exit") {
-      break;
-    }
-    else if (program == "echo") {
-      for (size_t i = 1; i < args.size(); ++i) {
-        if (i > 1) cout << " ";
-        cout << args[i];
-      }
-      cout << endl;
-    }
-    else if (program == "type" && args.size() > 1) {
-      string arg = args[1];
-      if (isBuiltin(arg)) {
-        cout << arg << " is a shell builtin" << endl;
-      } else {
-        string path = findInPath(arg);
-        if (!path.empty()) {
-          cout << arg << " is " << path << endl;
-        } else {
-          cout << arg << ": not found" << endl;
-        }
-      }
-    }
-    else if (program == "pwd") {
-      char cwd[1024];
-      if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-        cout << cwd << endl;
-      } else {
-        cerr << "pwd: error getting current directory" << endl;
-      }
-    }
-    else if (program == "history") {
-      if (args.size() > 2 && args[1] == "-r") {
-        string filename = args[2];
-        ifstream file(filename);
-        if (file.is_open()) {
-          string line;
-          while (getline(file, line)) {
-            if (!line.empty()) {
-              add_history(line.c_str());
-            }
-          }
-          file.close();
-        } else {
-          cerr << "history: " << filename << ": No such file or directory" << endl;
-        }
-      } else if (args.size() > 2 && args[1] == "-a") {
-        string filename = args[2];
-        ofstream file(filename, ios::app);
-        if (file.is_open()) {
-          int start = (last_appended_index() == -1) ? history_base : last_appended_index() + 1;
-          int end = history_base + history_length;
-          for (int i = start; i < end; ++i) {
-            HIST_ENTRY* entry = history_get(i);
-            if (entry) {
-              file << entry->line << endl;
-            }
-          }
-          file.close();
-          last_appended_index() = (history_base + history_length) - 1;
-        } else {
-          cerr << "history: " << filename << ": cannot create" << endl;
-        }
-      } else if (args.size() > 2 && args[1] == "-w") {
-        string filename = args[2];
-        ofstream file(filename);
-        if (file.is_open()) {
-          int start = history_base;
-          int end = history_base + history_length;
-          for (int i = start; i < end; ++i) {
-            HIST_ENTRY* entry = history_get(i);
-            if (entry) {
-              file << entry->line << endl;
-            }
-          }
-          file.close();
-        } else {
-          cerr << "history: " << filename << ": cannot create" << endl;
-        }
-      } else {
-        int start = history_base;
-        int end = history_base + history_length;
-
-        if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
-          int n = stoi(args[1]);
-          start = max(history_base, end - n);
-        }
-
-        for (int i = start; i < end; ++i) {
-          HIST_ENTRY* entry = history_get(i);
-          if (entry) {
-            cout << "    " << i << "  " << entry->line << endl;
-          }
-        }
-      }
-    }
-    else if (program == "jobs") {
-      listJobs();
-    }
-    else if (program == "complete") {
-      if (args.size() > 3 && args[1] == "-C") {
-        completion_registry()[args[3]] = args[2];
-      } else if (args.size() > 2 && args[1] == "-r") {
-        completion_registry().erase(args[2]);
-      } else if (args.size() > 2 && args[1] == "-p") {
-        string cmd = args[2];
-        auto it = completion_registry().find(cmd);
-        if (it != completion_registry().end()) {
-          cout << "complete -C '" << it->second << "' " << cmd << endl;
-        } else {
-          cerr << "complete: " << cmd << ": no completion specification" << endl;
-        }
-      }
-    }
-    else if (program == "declare") {
-      if (args.size() > 1 && args[1] == "-p") {
-        if (args.size() > 2) {
-          string varname = args[2];
-          auto it = shell_variables().find(varname);
-          if (it != shell_variables().end()) {
-            cout << "declare -- " << it->first << "=\"" << it->second << "\"" << endl;
-          } else {
-            cerr << "declare: " << varname << ": not found" << endl;
-          }
-        }
-      } else if (args.size() > 1) {
-        string assignment = args[1];
-        size_t eq = assignment.find('=');
-        if (eq != string::npos) {
-          string varname = assignment.substr(0, eq);
-          bool valid = !varname.empty() && (isalpha(varname[0]) || varname[0] == '_');
-          for (size_t i = 1; valid && i < varname.size(); ++i) {
-            if (!isalnum(varname[i]) && varname[i] != '_') valid = false;
-          }
-          if (!valid) {
-            cerr << "declare: `" << assignment << "': not a valid identifier" << endl;
-          } else {
-            string value = assignment.substr(eq + 1);
-            shell_variables()[varname] = value;
-          }
-        }
-      }
-    }
-    else if (program == "cd" && args.size() > 1) {
-      string path = args[1];
-
-      if (path == "~" || path.substr(0, 2) == "~/") {
-        string home;
-        const char* home_env = getenv("HOME");
-        if (home_env) {
-          home = home_env;
-          if (path == "~") {
-            path = home;
-          } else {
-            path = home + path.substr(1);
-          }
-        }
-      }
-
-      if (chdir(path.c_str()) != 0) {
-        cout << "cd: " << path << ": No such file or directory" << endl;
-      }
-    }
-    else {
-      restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
-
-      string path = findInPath(program);
-      if (!path.empty()) {
-        executeProgram(path, args,
-                      cmd_info.has_redirect ? cmd_info.output_file : "",
-                      cmd_info.is_append,
-                      cmd_info.has_error_redirect ? cmd_info.error_file : "",
-                      cmd_info.is_error_append);
-      } else {
-        cout << program << ": command not found" << endl;
-      }
-    }
-
-    restoreBuiltinRedirects(saved_stdout, redirect_fd, saved_stderr, error_redirect_fd);
+    if (!command.empty()) add_history(command.c_str());
+    if (processCommand(command)) break;
   }
 
-  if (!histfile.empty()) {
-    ofstream file(histfile);
-    if (file.is_open()) {
-      int start = history_base;
-      int end = history_base + history_length;
-      for (int i = start; i < end; ++i) {
-        HIST_ENTRY* entry = history_get(i);
-        if (entry) {
-          file << entry->line << endl;
-        }
-      }
-      file.close();
-    }
-  }
-
+  saveHistory(histfile);
   return 0;
 }
