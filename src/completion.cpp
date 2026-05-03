@@ -8,6 +8,8 @@
 #include <sstream>
 #include <cstdio>
 #include <cstring>
+#include <print>
+#include <span>
 #include <string_view>
 #include <algorithm>
 #include <filesystem>
@@ -182,9 +184,9 @@ static string extractPrevWord(const string& before_cursor) {
 static void runCompletionScript(const string& invoke) {
   FILE* fp = popen(invoke.c_str(), "r");
   if (!fp) return;
-  char buf[4096];
-  while (fgets(buf, sizeof(buf), fp)) {
-    string out(buf);
+  string buf(4096, '\0');
+  while (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
+    string out(buf.data());
     if (!out.empty() && out.back() == '\n') out.pop_back();
     if (!out.empty()) getCompleterResults().push_back(out);
   }
@@ -200,8 +202,7 @@ char** command_completion(const char* text, int start, int /*end*/) {
   size_t sp = line.find(' ');
   string cmd = (sp != string::npos) ? line.substr(0, sp) : line;
 
-  auto it = completion_registry.find(cmd);
-  if (it != completion_registry.end()) {
+  if (auto it = completion_registry.find(cmd); it != completion_registry.end()) {
     getCompleterResults().clear();
 
     string before_cursor = line.substr(0, start);
@@ -228,12 +229,15 @@ char** command_completion(const char* text, int start, int /*end*/) {
 }
 
 void display_matches_hook(char** matches, int num_matches, int /*max_length*/) {
-  fprintf(rl_outstream, "\n");
-  for (int i = 1; i <= num_matches; i++) {
-    if (i > 1) fprintf(rl_outstream, "  ");
-    fprintf(rl_outstream, "%s", matches[i]);
+  span<char*> match_list(matches + 1, static_cast<size_t>(num_matches));
+  std::print(rl_outstream, "\n");
+  bool first = true;
+  for (const char* m : match_list) {
+    if (!first) std::print(rl_outstream, "  ");
+    first = false;
+    std::print(rl_outstream, "{}", m);
   }
-  fprintf(rl_outstream, "\n");
+  std::print(rl_outstream, "\n");
   rl_on_new_line();
   rl_redisplay();
 }
