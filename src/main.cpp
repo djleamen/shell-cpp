@@ -58,7 +58,7 @@ int main() {
   cerr << unitbuf;
 
   rl_attempted_completion_function = command_completion;
-  rl_completion_display_matches_hook = reinterpret_cast<VFunction*>(display_matches_hook);
+  rl_completion_display_matches_hook = display_matches_hook;
 
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
