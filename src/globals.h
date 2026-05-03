@@ -34,5 +34,8 @@ struct BackgroundJob {
 /** @brief The live list of background jobs managed by this shell session. */
 extern std::vector<BackgroundJob> bg_jobs;
 
+/** @brief Shell variable store populated by the declare builtin. */
+extern std::map<std::string, std::string> shell_variables;
+
 /** @brief Null-terminated array of built-in command names. */
 extern const char* builtin_commands[];

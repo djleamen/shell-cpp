@@ -10,6 +10,8 @@ std::map<std::string, std::string> completion_registry;
 
 std::vector<BackgroundJob> bg_jobs;
 
+std::map<std::string, std::string> shell_variables;
+
 const char* builtin_commands[] = {
   "echo",
   "exit",

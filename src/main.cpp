@@ -342,9 +342,25 @@ int main() {
       }
     }
     else if (program == "declare") {
-      if (args.size() > 2 && args[1] == "-p") {
-        string varname = args[2];
-        cerr << "declare: " << varname << ": not found" << endl;
+      if (args.size() > 1 && args[1] == "-p") {
+        if (args.size() > 2) {
+          string varname = args[2];
+          auto it = shell_variables.find(varname);
+          if (it != shell_variables.end()) {
+            cout << "declare -- " << it->first << "=\"" << it->second << "\"" << endl;
+          } else {
+            cerr << "declare: " << varname << ": not found" << endl;
+          }
+        }
+      } else if (args.size() > 1) {
+        // declare NAME=VALUE
+        string assignment = args[1];
+        size_t eq = assignment.find('=');
+        if (eq != string::npos) {
+          string varname = assignment.substr(0, eq);
+          string value = assignment.substr(eq + 1);
+          shell_variables[varname] = value;
+        }
       }
     }
     else if (program == "cd" && args.size() > 1) {
