@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 #include <map>
@@ -19,7 +20,7 @@ extern int last_appended_index;
  * @brief Maps a command name to the path of its external completion script.
  *        Populated by `complete -C <script> <cmd>`.
  */
-extern std::map<std::string, std::string> completion_registry;
+extern std::map<std::string, std::string, std::less<>> completion_registry;
 
 /**
  * @brief Represents a single background job launched with `&`.
@@ -40,10 +41,10 @@ struct BackgroundJob {
 extern std::vector<BackgroundJob> bg_jobs;
 
 /** @brief Shell variable store populated by the declare builtin. */
-extern std::map<std::string, std::string> shell_variables;
+extern std::map<std::string, std::string, std::less<>> shell_variables;
 
 /** @brief Null-terminated array of built-in command names. */
-extern const char* builtin_commands[];
+extern const std::array<const char*, 10> builtin_commands;
 
 /**
  * @brief Expands $VAR and ${VAR} references in-place for every element of
