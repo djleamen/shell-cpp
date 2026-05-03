@@ -295,7 +295,7 @@ int main() {
   bool should_exit = false;
   do {
     reapJobs();
-    unique_ptr<char, decltype(&free)> raw(readline("$ "), free);
+    unique_ptr<char, decltype(&free)> raw(readline("$ "), &free);
     if (!raw) break;
     string command(raw.get());
     if (!command.empty()) add_history(command.c_str());
