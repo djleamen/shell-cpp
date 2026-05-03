@@ -58,7 +58,6 @@ static vector<string> collectPathExecutables(string_view prefix) {
 
 char* command_generator(const char* text, int state) {
   static int list_index;
-  static size_t len;
   static string search_text;
   static vector<string> path_executables;
   static size_t path_exec_index;
@@ -66,7 +65,6 @@ char* command_generator(const char* text, int state) {
 
   if (!state) {
     search_text = text ? text : "";
-    len = search_text.length();
     list_index = 0;
     path_exec_index = 0;
     builtins_done = false;
@@ -77,7 +75,7 @@ char* command_generator(const char* text, int state) {
     while (builtin_commands[list_index]) {
       const char* name = builtin_commands[list_index++];
       string cmd_name(name);
-      if (cmd_name.length() >= len && cmd_name.substr(0, len) == search_text) {
+      if (cmd_name.starts_with(search_text)) {
         return strdup(name);
       }
     }
@@ -104,8 +102,7 @@ char* filename_generator(const char* text, int state) {
     string input(text ? text : "");
     string dir_path;
     string file_prefix;
-    size_t last_slash = input.rfind('/');
-    if (last_slash != string::npos) {
+    if (size_t last_slash = input.rfind('/'); last_slash != string::npos) {
       dir_path = input.substr(0, last_slash + 1);
       file_prefix = input.substr(last_slash + 1);
     } else {
@@ -114,24 +111,25 @@ char* filename_generator(const char* text, int state) {
     }
 
     string search_dir = dir_path.empty() ? "." : dir_path;
-    size_t prefix_len = file_prefix.length();
 
     try {
       for (const auto& entry : fs::directory_iterator(search_dir)) {
         string filename = entry.path().filename().string();
-        if (filename.length() >= prefix_len && filename.substr(0, prefix_len) == file_prefix) {
-          string match = dir_path + filename;
-          if (fs::is_directory(entry.status())) {
-            match += "/";
-          }
-          matches.push_back(match);
+        if (!filename.starts_with(file_prefix)) continue;
+        string match = dir_path + filename;
+        if (fs::is_directory(entry.status())) {
+          match += "/";
         }
+        matches.push_back(match);
       }
-    } catch (...) {}
+    } catch (const fs::filesystem_error&) {
+      // Skip directories that cannot be iterated (permission denied, etc.)
+    }
   }
 
   if (match_index < matches.size()) {
-    string match = matches[match_index++];
+    const string& match = matches[match_index];
+    ++match_index;
     if (!match.empty() && match.back() == '/') {
       rl_completion_append_character = '\0';
     } else {
@@ -149,7 +147,8 @@ char* completer_generator(const char* /*text*/, int state) {
     idx = 0;
   }
   while (idx < getCompleterResults().size()) {
-    string candidate = getCompleterResults()[idx++];
+    const string& candidate = getCompleterResults()[idx];
+    ++idx;
     if (candidate.empty()) continue;
     rl_completion_append_character = ' ';
     return strdup(candidate.c_str());
