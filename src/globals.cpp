@@ -24,14 +24,16 @@ std::vector<BackgroundJob>& bg_jobs() {
   return val;
 }
 
-std::map<std::string, std::string, std::less<>> shell_variables;
+std::map<std::string, std::string, std::less<>>& shell_variables() {
+  static std::map<std::string, std::string, std::less<>> val;
+  return val;
+}
 
 static size_t expandBraceVar(const std::string& arg, size_t i, std::string& out) {
   size_t start = i + 2;
-  size_t close = arg.find('}', start);
-  if (close != std::string::npos) {
+  if (size_t close = arg.find('}', start); close != std::string::npos) {
     std::string varname = arg.substr(start, close - start);
-    if (auto it = shell_variables.find(varname); it != shell_variables.end())
+    if (auto it = shell_variables().find(varname); it != shell_variables().end())
       out += it->second;
     return close + 1;
   }
@@ -45,7 +47,7 @@ static size_t expandBareVar(const std::string& arg, size_t i, std::string& out) 
   while (end < arg.size() && (std::isalnum((unsigned char)arg[end]) || arg[end] == '_'))
     ++end;
   std::string varname = arg.substr(start, end - start);
-  if (auto it = shell_variables.find(varname); it != shell_variables.end())
+  if (auto it = shell_variables().find(varname); it != shell_variables().end())
     out += it->second;
   return end;
 }

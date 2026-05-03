@@ -289,8 +289,8 @@ int main() {
       if (args.size() > 1 && args[1] == "-p") {
         if (args.size() > 2) {
           string varname = args[2];
-          auto it = shell_variables.find(varname);
-          if (it != shell_variables.end()) {
+          auto it = shell_variables().find(varname);
+          if (it != shell_variables().end()) {
             cout << "declare -- " << it->first << "=\"" << it->second << "\"" << endl;
           } else {
             cerr << "declare: " << varname << ": not found" << endl;
@@ -309,7 +309,7 @@ int main() {
             cerr << "declare: `" << assignment << "': not a valid identifier" << endl;
           } else {
             string value = assignment.substr(eq + 1);
-            shell_variables[varname] = value;
+            shell_variables()[varname] = value;
           }
         }
       }

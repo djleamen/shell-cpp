@@ -41,7 +41,7 @@ struct BackgroundJob {
 std::vector<BackgroundJob>& bg_jobs();
 
 /** @brief Shell variable store populated by the declare builtin. */
-extern std::map<std::string, std::string, std::less<>> shell_variables;
+std::map<std::string, std::string, std::less<>>& shell_variables();
 
 /** @brief Null-terminated array of built-in command names. */
 extern const std::array<const char*, 10> builtin_commands;
