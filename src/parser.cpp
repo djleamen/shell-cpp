@@ -12,12 +12,13 @@ static pair<bool, vector<string>> splitByPipe(const string& command) {
   vector<string> segments;
   string current;
   bool in_single = false, in_double = false, has_pipe = false;
-
-  for (size_t i = 0; i < command.size(); ++i) {
+  size_t i = 0;
+  while (i < command.size()) {
     char c = command[i];
     if (c == '\\' && !in_single && i + 1 < command.size()) {
       current += c;
-      current += command[++i];
+      ++i;
+      current += command[i];
     } else if (c == '\'' && !in_double) {
       in_single = !in_single;
       current += c;
@@ -31,6 +32,7 @@ static pair<bool, vector<string>> splitByPipe(const string& command) {
     } else {
       current += c;
     }
+    ++i;
   }
   if (!current.empty()) segments.push_back(current);
   return {has_pipe, segments};
@@ -40,20 +42,16 @@ static vector<string> tokenise(const string& cmd_str) {
   vector<string> tokens;
   string current;
   bool in_single = false, in_double = false;
-
-  for (size_t i = 0; i < cmd_str.size(); ++i) {
+  size_t i = 0;
+  while (i < cmd_str.size()) {
     char c = cmd_str[i];
     if (c == '\\' && !in_single && !in_double) {
-      if (i + 1 < cmd_str.size()) current += cmd_str[++i];
-      else                         current += c;
+      if (i + 1 < cmd_str.size()) { ++i; current += cmd_str[i]; }
+      else                          current += c;
     } else if (c == '\\' && in_double) {
-      if (i + 1 < cmd_str.size()) {
-        char next = cmd_str[i + 1];
-        if (next == '"' || next == '\\') { current += next; ++i; }
-        else                              current += c;
-      } else {
-        current += c;
-      }
+      char next = (i + 1 < cmd_str.size()) ? cmd_str[i + 1] : '\0';
+      if (next == '"' || next == '\\') { ++i; current += cmd_str[i]; }
+      else                               current += c;
     } else if (c == '\'' && !in_double) {
       in_single = !in_single;
     } else if (c == '"' && !in_single) {
@@ -63,32 +61,35 @@ static vector<string> tokenise(const string& cmd_str) {
     } else {
       current += c;
     }
+    ++i;
   }
   if (!current.empty()) tokens.push_back(current);
   return tokens;
 }
 
 static void extractRedirects(vector<string>& args, CommandInfo& info) {
-  for (size_t i = 0; i + 1 < args.size(); ++i) {
+  vector<string> clean;
+  size_t i = 0;
+  while (i < args.size()) {
     const string& tok = args[i];
-    if (tok == ">>" || tok == "1>>") {
+    if ((tok == ">>" || tok == "1>>") && i + 1 < args.size()) {
       info.has_redirect = true; info.is_append = true;
-      info.output_file  = args[i + 1];
-      args.erase(args.begin() + i, args.begin() + i + 2); --i;
-    } else if (tok == ">" || tok == "1>") {
+      info.output_file = args[++i];
+    } else if ((tok == ">" || tok == "1>") && i + 1 < args.size()) {
       info.has_redirect = true; info.is_append = false;
-      info.output_file  = args[i + 1];
-      args.erase(args.begin() + i, args.begin() + i + 2); --i;
-    } else if (tok == "2>>") {
+      info.output_file = args[++i];
+    } else if (tok == "2>>" && i + 1 < args.size()) {
       info.has_error_redirect = true; info.is_error_append = true;
-      info.error_file = args[i + 1];
-      args.erase(args.begin() + i, args.begin() + i + 2); --i;
-    } else if (tok == "2>") {
+      info.error_file = args[++i];
+    } else if (tok == "2>" && i + 1 < args.size()) {
       info.has_error_redirect = true; info.is_error_append = false;
-      info.error_file = args[i + 1];
-      args.erase(args.begin() + i, args.begin() + i + 2); --i;
+      info.error_file = args[++i];
+    } else {
+      clean.push_back(tok);
     }
+    ++i;
   }
+  args = move(clean);
 }
 
 static CommandInfo parseCommand(const string& cmd_str) {
