@@ -21,10 +21,11 @@ vector<string>& getCompleterResults() {
 }
 
 static bool isExecutable(const fs::directory_entry& entry) {
+  using enum fs::perms;
   auto perms = entry.status().permissions();
-  return (perms & fs::perms::owner_exec) != fs::perms::none ||
-         (perms & fs::perms::group_exec) != fs::perms::none ||
-         (perms & fs::perms::others_exec) != fs::perms::none;
+  return (perms & owner_exec) != none ||
+         (perms & group_exec) != none ||
+         (perms & others_exec) != none;
 }
 
 static vector<string> collectPathExecutables(const string& prefix) {
