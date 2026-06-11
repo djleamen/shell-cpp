@@ -126,8 +126,12 @@ static void historyList(const vector<string>& args) {
   int start = history_base;
   int end = history_base + history_length;
   if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
-    int n = stoi(args[1]);
-    start = max(history_base, end - n);
+    try {
+      start = max(history_base, end - stoi(args[1]));
+    } catch (const exception&) {
+      cerr << "history: " << args[1] << ": numeric argument required" << endl;
+      return;
+    }
   }
   for (int i = start; i < end; ++i) {
     if (const HIST_ENTRY* entry = history_get(i)) cout << "    " << i << "  " << entry->line << endl;
@@ -142,7 +146,11 @@ static void builtinHistory(const vector<string>& args) {
 }
 
 [[noreturn]] void executeBuiltinInChild(const vector<string>& args) {
-  if (const string& program = args[0]; program == "exit")         { exit(0); }
+  if (const string& program = args[0]; program == "exit") {
+    int code = 0;
+    if (args.size() > 1) { try { code = stoi(args[1]); } catch (const exception&) {} }
+    exit(code);
+  }
   else if (program == "echo")    { builtinEcho(args); }
   else if (program == "type")    { builtinType(args); }
   else if (program == "pwd")     { builtinPwd(); }

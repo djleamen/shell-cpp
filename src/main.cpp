@@ -130,7 +130,12 @@ static void runHistoryList(const vector<string>& args) {
   int end = history_base + history_length;
   int start = history_base;
   if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
-    start = max(history_base, end - stoi(args[1]));
+    try {
+      start = max(history_base, end - stoi(args[1]));
+    } catch (const exception&) {
+      cerr << "history: " << args[1] << ": numeric argument required" << endl;
+      return;
+    }
   }
   for (int i = start; i < end; ++i) {
     const HIST_ENTRY* entry = history_get(i);
@@ -222,9 +227,16 @@ static void runBackground(const string& program, const vector<string>& args, con
   }
 }
 
+static int exit_status = 0;
+
 static bool dispatchBuiltin(string_view program, const CommandInfo& cmd_info) {
   const vector<string>& args = cmd_info.args;
-  if (program == "exit")    return true;
+  if (program == "exit") {
+    if (args.size() > 1) {
+      try { exit_status = stoi(args[1]); } catch (const exception&) { exit_status = 0; }
+    }
+    return true;
+  }
   if (program == "echo")    { runEcho(args);     return false; }
   if (program == "type")    { runType(args);     return false; }
   if (program == "pwd")     { runPwd();          return false; }
@@ -303,5 +315,5 @@ int main() {
   } while (!should_exit);
 
   saveHistory(histfile);
-  return 0;
+  return exit_status;
 }
