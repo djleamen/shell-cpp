@@ -8,6 +8,7 @@
 #include <array>
 #include <cctype>
 #include <string_view>
+#include <charconv>
 
 int& last_appended_index() {
   static int val = -1;
@@ -90,3 +91,14 @@ const std::array<const char*, 10> builtin_commands = {
   "declare",
   nullptr
 };
+
+bool parseNumericArg(const std::string& arg, int& out) {
+  const char* first = arg.c_str();
+  const char* last = first + arg.size();
+  if (first != last && *first == '+') ++first;
+  int value = 0;
+  auto [ptr, ec] = std::from_chars(first, last, value);
+  if (ec != std::errc() || ptr != last || first == last) return false;
+  out = value;
+  return true;
+}

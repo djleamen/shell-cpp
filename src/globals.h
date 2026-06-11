@@ -55,3 +55,13 @@ extern const std::array<const char*, 10> builtin_commands;
  * @param[in,out] args  Token list to expand; modified in place.
  */
 void expandArgs(std::vector<std::string>& args);
+
+/**
+ * @brief Strictly parses a builtin's integer argument: the whole string must
+ *        be a (optionally signed) decimal number.
+ *
+ * @param[in]  arg  Argument text to parse.
+ * @param[out] out  Parsed value; unchanged on failure.
+ * @return true if @p arg is a valid integer, false otherwise.
+ */
+bool parseNumericArg(const std::string& arg, int& out);

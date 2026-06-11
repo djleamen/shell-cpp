@@ -130,12 +130,12 @@ static void runHistoryList(const vector<string>& args) {
   int end = history_base + history_length;
   int start = history_base;
   if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
-    try {
-      start = max(history_base, end - stoi(args[1]));
-    } catch (const exception&) {
+    int n = 0;
+    if (!parseNumericArg(args[1], n)) {
       cerr << "history: " << args[1] << ": numeric argument required" << endl;
       return;
     }
+    start = max(history_base, end - n);
   }
   for (int i = start; i < end; ++i) {
     const HIST_ENTRY* entry = history_get(i);
@@ -233,7 +233,13 @@ static bool dispatchBuiltin(string_view program, const CommandInfo& cmd_info) {
   const vector<string>& args = cmd_info.args;
   if (program == "exit") {
     if (args.size() > 1) {
-      try { exit_status = stoi(args[1]); } catch (const exception&) { exit_status = 0; }
+      int code = 0;
+      if (parseNumericArg(args[1], code)) {
+        exit_status = code & 0xFF;
+      } else {
+        cerr << "exit: " << args[1] << ": numeric argument required" << endl;
+        exit_status = 2;
+      }
     }
     return true;
   }

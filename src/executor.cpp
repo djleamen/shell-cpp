@@ -4,6 +4,7 @@
  *        program/pipeline running.
  */
 #include "executor.h"
+#include "globals.h"
 
 #include <iostream>
 #include <sstream>
@@ -125,13 +126,13 @@ static void historyAppend(const string& filename) {
 static void historyList(const vector<string>& args) {
   int start = history_base;
   int end = history_base + history_length;
-  if (args.size() > 1 && args[1] != "-r" && args[1] != "-w") {
-    try {
-      start = max(history_base, end - stoi(args[1]));
-    } catch (const exception&) {
+  if (args.size() > 1 && args[1] != "-r" && args[1] != "-w" && args[1] != "-a") {
+    int n = 0;
+    if (!parseNumericArg(args[1], n)) {
       cerr << "history: " << args[1] << ": numeric argument required" << endl;
       return;
     }
+    start = max(history_base, end - n);
   }
   for (int i = start; i < end; ++i) {
     if (const HIST_ENTRY* entry = history_get(i)) cout << "    " << i << "  " << entry->line << endl;
@@ -148,8 +149,11 @@ static void builtinHistory(const vector<string>& args) {
 [[noreturn]] void executeBuiltinInChild(const vector<string>& args) {
   if (const string& program = args[0]; program == "exit") {
     int code = 0;
-    if (args.size() > 1) { try { code = stoi(args[1]); } catch (const exception&) {} }
-    exit(code);
+    if (args.size() > 1 && !parseNumericArg(args[1], code)) {
+      cerr << "exit: " << args[1] << ": numeric argument required" << endl;
+      exit(2);
+    }
+    exit(code & 0xFF);
   }
   else if (program == "echo")    { builtinEcho(args); }
   else if (program == "type")    { builtinType(args); }
